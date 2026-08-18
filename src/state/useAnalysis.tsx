@@ -12,6 +12,8 @@ import { buildFeatureSpace, midVitals, transformPoint, type FeatureSpace } from 
 import { project, type Projection, type ProjectionMethod } from '../lib/projection'
 import { kmeans, silhouette } from '../lib/kmeans'
 import { numericFeatures } from '../lib/features'
+import { clusterLabels } from '../lib/clusterLabels'
+import { extractDescriptors, type Descriptor } from '../lib/descriptors'
 
 export const GUIDES = guidesJson as unknown as Guide[]
 
@@ -38,7 +40,10 @@ interface AnalysisState {
   k: number
   setK: (k: number) => void
   clusterOf: number[] // per styles[] index
+  clusterNames: string[] // per cluster, distinctive-tag label
   silhouetteScore: number
+  /** flavor-descriptor fingerprints per allStyles[] index */
+  descriptorsOf: Descriptor[][]
   colorBy: ColorBy
   setColorBy: (c: ColorBy) => void
   alpha: number
@@ -134,6 +139,16 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
     return { clusterOf: res.labels, silhouetteScore: silhouette(space.vectors, res.labels) }
   }, [space, k])
 
+  const clusterNames = useMemo(
+    () => clusterLabels(styles, clusterOf, k),
+    [styles, clusterOf, k],
+  )
+
+  const descriptorsOf = useMemo(
+    () => allStyles.map((s) => extractDescriptors(s)),
+    [allStyles],
+  )
+
   const { vectors: numericZ, transform: numericTransform } = useMemo(
     () => numericZSpace(styles),
     [styles],
@@ -163,7 +178,9 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
     k,
     setK,
     clusterOf,
+    clusterNames,
     silhouetteScore,
+    descriptorsOf,
     colorBy,
     setColorBy,
     alpha,

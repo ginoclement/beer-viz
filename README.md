@@ -13,9 +13,10 @@ you drop your own recipes into the same math.
 | **3D Style Space** | PCA or UMAP projection of all styles into 3D (three.js). Color by live k-means cluster (k slider, silhouette readout) or by the style's actual SRM beer color. Hover for vitals, click for the full guideline entry. |
 | **Similarity** | Pick any style → ranked nearest neighbors with the Jaccard (tag) and vital-statistics parts of the score shown separately, plus a force-directed network of all styles linked above a similarity threshold. |
 | **Vital Statistics** | ABV × IBU scatter and OG × attenuation scatter (points painted their true SRM color), and a "color ladder" of every style's published SRM range. |
-| **Matrix** | The full pairwise similarity matrix as a heatmap, rows ordered by average-linkage hierarchical clustering so families form bright blocks. |
+| **Matrix** | The full pairwise similarity matrix as a heatmap, rows ordered by average-linkage hierarchical clustering so families form bright blocks — plus the same clustering drawn as a dendrogram ("family tree"). |
 | **Guidelines** | Compare BJCP 2021 vs BJCP 2015 vs Brewers Association 2017: vital-statistic drift per matched style (with fuzzy name matching), styles added/removed, and both guidelines embedded into one shared PCA map. |
-| **My Recipes** | Import a **Brewfather JSON** export, a **BeerXML** file, or manual vitals. The recipe gets BJCP-vocabulary tags derived from its numbers, is projected into the current style space with the fitted PCA/UMAP transform, ranked against every style, and drawn as a diamond in the 3D view. Everything runs client-side; nothing is uploaded. |
+| **Browse** | Full-text search over names, categories, tags, and descriptions; tag filters; sortable columns; true-color SRM swatches. |
+| **My Recipes** | Import a **Brewfather JSON** export, a **BeerXML** file, or manual vitals. The recipe gets BJCP-vocabulary tags derived from its numbers, is projected into the current style space with the fitted PCA/UMAP transform, ranked against every style, and drawn as a diamond in the 3D view with dashed tethers to its top-3 matches. Recipes persist in localStorage; everything runs client-side and nothing is uploaded. |
 
 ## The analysis
 
@@ -29,6 +30,17 @@ you drop your own recipes into the same math.
 - **Similarity**: `alpha * Jaccard(tags) + (1 - alpha) * closeness(vitals)`,
   with closeness = euclidean distance on z-scored vitals rescaled by the
   95th-percentile pairwise distance.
+- **Flavor-text mining**: a curated lexicon of ~50 beer sensory descriptors
+  (caramel, clove, grapefruit, funky, …) grouped by malt / hops /
+  fermentation / mouthfeel is matched against each style's aroma, flavor,
+  and impression prose. The fingerprint appears in every style's detail
+  panel, and the Similarity view can rank styles purely by shared flavor
+  language.
+- **Cluster auto-naming**: k-means clusters are labeled by their most
+  distinctive tags (highest lift vs. the overall tag frequency), so the
+  legend reads "ipa-family · high-strength" instead of "Cluster D".
+- **Shareable URLs**: the active view, guideline, and selected style live in
+  the URL hash (e.g. `#space/bjcp2021/21A`).
 - Styles without published vital statistics (e.g. Fruit Beer, Experimental
   Beer) are excluded from the quantitative space but remain browsable; the
   Brewers Association file's "varies with style" placeholder ranges are

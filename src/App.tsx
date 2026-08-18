@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnalysisProvider, GUIDES, useAnalysis } from './state/useAnalysis'
 import type { GuideId } from './lib/types'
 import SpaceView from './views/SpaceView'
@@ -7,10 +7,12 @@ import VitalsView from './views/VitalsView'
 import MatrixView from './views/MatrixView'
 import CompareView from './views/CompareView'
 import RecipeView from './views/RecipeView'
+import BrowseView from './views/BrowseView'
 
 const TABS = [
   { id: 'space', label: '3D Style Space' },
   { id: 'similarity', label: 'Similarity' },
+  { id: 'browse', label: 'Browse' },
   { id: 'vitals', label: 'Vital Statistics' },
   { id: 'matrix', label: 'Matrix' },
   { id: 'compare', label: 'Guidelines' },
@@ -19,9 +21,36 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]['id']
 
+const isTab = (t: string): t is TabId => TABS.some((x) => x.id === t)
+
+/** #tab/guideId/styleId — shareable app state in the URL hash. */
+function parseHash(): { tab?: TabId; guide?: GuideId; styleId?: string } {
+  const parts = decodeURIComponent(window.location.hash.replace(/^#\/?/, '')).split('/')
+  const out: { tab?: TabId; guide?: GuideId; styleId?: string } = {}
+  if (parts[0] && isTab(parts[0])) out.tab = parts[0]
+  if (parts[1] && GUIDES.some((g) => g.guide === parts[1])) out.guide = parts[1] as GuideId
+  if (parts[2]) out.styleId = parts[2]
+  return out
+}
+
 function Shell() {
-  const [tab, setTab] = useState<TabId>('space')
-  const { guideId, setGuideId, recipes } = useAnalysis()
+  const initial = useRef(parseHash())
+  const [tab, setTab] = useState<TabId>(initial.current.tab ?? 'space')
+  const { guideId, setGuideId, recipes, selectedId, setSelectedId } = useAnalysis()
+
+  // apply guide/style from the URL once on mount
+  useEffect(() => {
+    const { guide, styleId } = initial.current
+    if (guide) setGuideId(guide)
+    if (styleId) setSelectedId(styleId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // keep the hash in sync so any view is linkable
+  useEffect(() => {
+    const next = `#${tab}/${guideId}${selectedId ? `/${encodeURIComponent(selectedId)}` : ''}`
+    if (window.location.hash !== next) window.history.replaceState(null, '', next)
+  }, [tab, guideId, selectedId])
 
   return (
     <div className="app">
@@ -62,6 +91,7 @@ function Shell() {
 
       {tab === 'space' && <SpaceView />}
       {tab === 'similarity' && <SimilarityView />}
+      {tab === 'browse' && <BrowseView />}
       {tab === 'vitals' && <VitalsView />}
       {tab === 'matrix' && <MatrixView />}
       {tab === 'compare' && <CompareView />}

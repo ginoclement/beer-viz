@@ -6,6 +6,7 @@ import { useAnalysis, type ColorBy } from '../state/useAnalysis'
 import { clusterColor, MAX_K, RECIPE_COLOR } from '../lib/palette'
 import { srmToHex } from '../lib/srm'
 import { midVitals } from '../lib/features'
+import { euclidean, jaccard } from '../lib/similarity'
 import StyleDetail from '../components/StyleDetail'
 import type { BeerStyle } from '../lib/types'
 
@@ -106,9 +107,46 @@ function StylePoints({
 }
 
 function RecipePoints({ onHover }: { onHover: (h: Hover | null) => void }) {
-  const { recipePoints } = useAnalysis()
+  const { recipePoints, styles, numericZ, numericTransform, alpha, projection } = useAnalysis()
+
+  // faint tethers from each recipe to its top-3 matched styles
+  const tethers = useMemo(() => {
+    return recipePoints.map((rp) => {
+      const rz = numericTransform(rp.recipe.vitals)
+      const dists = numericZ.map((v) => euclidean(rz, v))
+      const sorted = [...dists].sort((a, b) => a - b)
+      const scale = sorted[Math.floor(sorted.length * 0.95)] || 1
+      return styles
+        .map((s, i) => ({
+          i,
+          sim:
+            alpha * jaccard(rp.recipe.tags, s.tags) +
+            (1 - alpha) * Math.max(0, 1 - dists[i] / scale),
+        }))
+        .sort((a, b) => b.sim - a.sim)
+        .slice(0, 3)
+        .map((m) => ({ to: projection.points[m.i], sim: m.sim }))
+    })
+  }, [recipePoints, styles, numericZ, numericTransform, alpha, projection])
+
   return (
     <group>
+      {recipePoints.map((rp, i) => (
+        <group key={`t-${i}`}>
+          {tethers[i]?.map((t, j) => (
+            <Line
+              key={j}
+              points={[rp.position, t.to]}
+              color="#ffffff"
+              transparent
+              opacity={0.22 + t.sim * 0.3}
+              lineWidth={1.5}
+              dashed
+              dashScale={28}
+            />
+          ))}
+        </group>
+      ))}
       {recipePoints.map((rp, i) => (
         <group key={i} position={rp.position}>
           <mesh
@@ -201,7 +239,7 @@ function fmt(x: number, d = 0) {
 }
 
 function TooltipContent({ hover }: { hover: Hover }) {
-  const { styles, clusterOf, recipePoints } = useAnalysis()
+  const { styles, clusterOf, clusterNames, recipePoints } = useAnalysis()
   if (hover.kind === 'recipe') {
     const rp = recipePoints[hover.index]
     if (!rp) return null
@@ -226,7 +264,7 @@ function TooltipContent({ hover }: { hover: Hover }) {
         {s.name}
       </div>
       <div className="t-sub">
-        {s.category} · cluster {String.fromCharCode(65 + (clusterOf[hover.index] ?? 0))}
+        {s.category} · {clusterNames[clusterOf[hover.index] ?? 0] ?? 'cluster'}
       </div>
       {v && (
         <div className="t-stats">
@@ -238,7 +276,8 @@ function TooltipContent({ hover }: { hover: Hover }) {
 }
 
 function SpaceLegend() {
-  const { colorBy, clusterOf, k, styles, silhouetteScore, method, projection } = useAnalysis()
+  const { colorBy, clusterOf, clusterNames, k, styles, silhouetteScore, method, projection } =
+    useAnalysis()
   const counts = useMemo(() => {
     const c = new Array(k).fill(0)
     clusterOf.forEach((l) => {
@@ -255,7 +294,8 @@ function SpaceLegend() {
             <div className="row" key={i}>
               <span className="dot" style={{ background: clusterColor(i) }} />
               <span>
-                Cluster {String.fromCharCode(65 + i)} · {cnt} styles
+                <strong style={{ color: 'var(--ink)' }}>{clusterNames[i] ?? `cluster ${i + 1}`}</strong>{' '}
+                · {cnt}
               </span>
             </div>
           ))}

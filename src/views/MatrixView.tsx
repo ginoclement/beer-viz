@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAnalysis } from '../state/useAnalysis'
 import { combinedSimilarityMatrix } from '../lib/similarity'
-import { hclustOrder } from '../lib/hclust'
+import { hclustTree, type DendroNode } from '../lib/hclust'
 import { clusterColor } from '../lib/palette'
 import StyleDetail from '../components/StyleDetail'
+import type { BeerStyle } from '../lib/types'
 
 /** Sequential blue ramp (light -> dark reversed for dark surface: low sim recedes). */
 function simColor(v: number): string {
@@ -13,6 +14,74 @@ function simColor(v: number): string {
   const to = [57, 135, 229] // #3987e5
   const g = (i: number) => Math.round(from[i] + (to[i] - from[i]) * t ** 1.35)
   return `rgb(${g(0)},${g(1)},${g(2)})`
+}
+
+function Dendrogram({
+  tree,
+  styles,
+  clusterOf,
+  onPick,
+  selectedId,
+}: {
+  tree: DendroNode
+  styles: BeerStyle[]
+  clusterOf: number[]
+  onPick: (id: string) => void
+  selectedId: string | null
+}) {
+  const rowH = 16
+  const plotW = 420
+  const labelW = 300
+  const leaves = tree.leaves
+  const height = leaves.length * rowH + 8
+  const maxH = tree.height || 1
+  const x = (h: number) => 8 + (1 - h / maxH) * plotW
+  const yOfLeaf = new Map(leaves.map((leaf, i) => [leaf, i * rowH + rowH / 2]))
+
+  const paths: string[] = []
+  const layout = (node: DendroNode): { x: number; y: number } => {
+    if (node.leaf >= 0) return { x: x(0), y: yOfLeaf.get(node.leaf)! }
+    const l = layout(node.left!)
+    const r = layout(node.right!)
+    const px = x(node.height)
+    paths.push(`M ${l.x} ${l.y} H ${px} V ${r.y} H ${r.x}`)
+    return { x: px, y: (l.y + r.y) / 2 }
+  }
+  layout(tree)
+
+  return (
+    <svg width={plotW + labelW + 20} height={height} role="img" aria-label="Hierarchical clustering dendrogram">
+      {paths.map((d, i) => (
+        <path key={i} d={d} fill="none" stroke="var(--baseline)" strokeWidth={1} />
+      ))}
+      {leaves.map((leaf, i) => {
+        const s = styles[leaf]
+        const y = i * rowH + rowH / 2
+        const active = s.id === selectedId
+        return (
+          <g key={s.id} style={{ cursor: 'pointer' }} onClick={() => onPick(s.id)}>
+            <rect
+              x={plotW + 10}
+              y={y - rowH / 2 + 1}
+              width={labelW}
+              height={rowH - 2}
+              fill={active ? 'var(--surface-2)' : 'transparent'}
+            />
+            <circle cx={plotW + 16} cy={y} r={4} fill={clusterColor(clusterOf[leaf] ?? 0)} />
+            <text
+              x={plotW + 26}
+              y={y + 4}
+              fontSize={11.5}
+              fill={active ? 'var(--ink)' : 'var(--ink-2)'}
+            >
+              {s.categoryId ? `${s.id} ` : ''}
+              {s.name}
+            </text>
+          </g>
+        )
+      })}
+    </svg>
+  )
 }
 
 export default function MatrixView() {
@@ -26,10 +95,11 @@ export default function MatrixView() {
     [numericZ, styles, alpha],
   )
 
-  const order = useMemo(() => {
+  const tree = useMemo(() => {
     const dist = matrix.map((row) => row.map((v) => 1 - v))
-    return hclustOrder(dist)
+    return hclustTree(dist)
   }, [matrix])
+  const order = useMemo(() => tree?.leaves ?? [], [tree])
 
   const n = styles.length
   const cell = Math.max(6, Math.floor(760 / Math.max(n, 1)))
@@ -133,6 +203,25 @@ export default function MatrixView() {
               0% → 100% similar
             </p>
           </div>
+          {tree && (
+            <div className="chart-card" style={{ display: 'inline-block', verticalAlign: 'top', marginLeft: 20 }}>
+              <h2>Family tree</h2>
+              <p className="sub">
+                The same clustering as a dendrogram: styles that merge early (far right) are
+                near-twins; long branches are loners. Dot = k-means cluster; click a style
+                to open it.
+              </p>
+              <div className="chart-scroll" style={{ maxHeight: 760, overflowY: 'auto' }}>
+                <Dendrogram
+                  tree={tree}
+                  styles={styles}
+                  clusterOf={clusterOf}
+                  onPick={setSelectedId}
+                  selectedId={selectedId}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <aside className="sidebar">

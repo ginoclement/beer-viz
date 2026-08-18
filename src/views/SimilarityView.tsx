@@ -10,6 +10,7 @@ import {
 } from 'd3-force'
 import { useAnalysis } from '../state/useAnalysis'
 import { combinedSimilarityMatrix, jaccard, neighborsOf } from '../lib/similarity'
+import { descriptorSimilarity } from '../lib/descriptors'
 import { clusterColor } from '../lib/palette'
 import StyleDetail from '../components/StyleDetail'
 
@@ -25,7 +26,7 @@ function NetworkGraph({
   threshold: number
   onPick: (id: string) => void
 }) {
-  const { styles, numericZ, clusterOf, alpha, selectedId } = useAnalysis()
+  const { styles, numericZ, clusterOf, clusterNames, alpha, selectedId } = useAnalysis()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null)
@@ -160,8 +161,7 @@ function NetworkGraph({
         <div className="tooltip3d" style={{ left: hover.x, top: hover.y }}>
           <div className="t-name">{styles[hover.i].name}</div>
           <div className="t-sub">
-            {styles[hover.i].category} · cluster{' '}
-            {String.fromCharCode(65 + (clusterOf[hover.i] ?? 0))}
+            {styles[hover.i].category} · {clusterNames[clusterOf[hover.i] ?? 0] ?? ''}
           </div>
         </div>
       )}
@@ -176,15 +176,41 @@ function NetworkGraph({
 }
 
 export default function SimilarityView() {
-  const { allStyles, styles, numericZ, alpha, setAlpha, selectedId, setSelectedId } =
-    useAnalysis()
+  const {
+    allStyles,
+    styles,
+    numericZ,
+    alpha,
+    setAlpha,
+    selectedId,
+    setSelectedId,
+    descriptorsOf,
+  } = useAnalysis()
   const [threshold, setThreshold] = useState(0.78)
+  const [rankBy, setRankBy] = useState<'blend' | 'flavor'>('blend')
 
   const focus = allStyles.find((s) => s.id === selectedId) ?? styles[0]
   const focusStatsIndex = styles.findIndex((s) => s.id === focus?.id)
+  const focusAllIndex = allStyles.findIndex((s) => s.id === focus?.id)
 
   const neighbors = useMemo(() => {
     if (!focus) return []
+    if (rankBy === 'flavor') {
+      // rank purely by the language of the guideline prose
+      const fd = descriptorsOf[focusAllIndex] ?? []
+      return allStyles
+        .map((s, i) => ({ style: s, i }))
+        .filter(({ style }) => style.id !== focus.id)
+        .map(({ style, i }) => ({
+          style,
+          index: -1,
+          jaccard: descriptorSimilarity(fd, descriptorsOf[i] ?? []),
+          numericCloseness: 0,
+          similarity: descriptorSimilarity(fd, descriptorsOf[i] ?? []),
+        }))
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, 20)
+    }
     if (focusStatsIndex >= 0) {
       return neighborsOf(
         focusStatsIndex,
@@ -206,7 +232,7 @@ export default function SimilarityView() {
       }))
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, 20)
-  }, [focus, focusStatsIndex, numericZ, styles, allStyles, alpha])
+  }, [focus, focusStatsIndex, focusAllIndex, numericZ, styles, allStyles, alpha, rankBy, descriptorsOf])
 
   if (!focus) return null
   const sharedWith = new Set(focus.tags)
@@ -230,18 +256,35 @@ export default function SimilarityView() {
               ))}
             </select>
           </label>
-          <label className="ctl" title="0 = numbers only, 1 = tags only">
-            Tags ⇄ numbers blend
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={alpha}
-              onChange={(e) => setAlpha(Number(e.target.value))}
-            />
-            <span className="val">{alpha.toFixed(2)}</span>
+          <label className="ctl">
+            Rank by
+            <span className="seg">
+              <button className={rankBy === 'blend' ? 'active' : ''} onClick={() => setRankBy('blend')}>
+                Tags + numbers
+              </button>
+              <button
+                className={rankBy === 'flavor' ? 'active' : ''}
+                onClick={() => setRankBy('flavor')}
+                title="Jaccard similarity of flavor descriptors mined from the guideline prose"
+              >
+                Flavor text
+              </button>
+            </span>
           </label>
+          {rankBy === 'blend' && (
+            <label className="ctl" title="0 = numbers only, 1 = tags only">
+              Tags ⇄ numbers blend
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={alpha}
+                onChange={(e) => setAlpha(Number(e.target.value))}
+              />
+              <span className="val">{alpha.toFixed(2)}</span>
+            </label>
+          )}
           <label className="ctl">
             Network threshold
             <input
@@ -263,7 +306,9 @@ export default function SimilarityView() {
                   <th>#</th>
                   <th>Style</th>
                   <th>Match</th>
-                  <th style={{ minWidth: 120 }}>Tag / numeric parts</th>
+                  <th style={{ minWidth: 120 }}>
+                    {rankBy === 'flavor' ? 'Shared flavor language' : 'Tag / numeric parts'}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -279,24 +324,38 @@ export default function SimilarityView() {
                       <div
                         className="simbar jac"
                         style={{ width: `${Math.max(2, n.jaccard * 100)}px` }}
-                        title={`Jaccard tag similarity ${(n.jaccard * 100).toFixed(0)}%`}
+                        title={
+                          rankBy === 'flavor'
+                            ? `Descriptor overlap ${(n.jaccard * 100).toFixed(0)}%`
+                            : `Jaccard tag similarity ${(n.jaccard * 100).toFixed(0)}%`
+                        }
                       />
-                      <div
-                        className="simbar"
-                        style={{ width: `${Math.max(2, n.numericCloseness * 100)}px`, marginTop: 2 }}
-                        title={`Vital-statistics closeness ${(n.numericCloseness * 100).toFixed(0)}%`}
-                      />
+                      {rankBy === 'blend' && (
+                        <div
+                          className="simbar"
+                          style={{ width: `${Math.max(2, n.numericCloseness * 100)}px`, marginTop: 2 }}
+                          title={`Vital-statistics closeness ${(n.numericCloseness * 100).toFixed(0)}%`}
+                        />
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p style={{ color: 'var(--muted)', fontSize: 12 }}>
-              <span className="srmdot" style={{ background: 'var(--accent)', border: 'none' }} />{' '}
-              Jaccard similarity of guideline tags ·{' '}
-              <span className="srmdot" style={{ background: 'var(--blue)', border: 'none' }} />{' '}
-              closeness of z-scored vital statistics. Blend with the slider above.
-            </p>
+            {rankBy === 'flavor' ? (
+              <p style={{ color: 'var(--muted)', fontSize: 12 }}>
+                Ranked purely by shared flavor descriptors (caramel, clove, grapefruit, funky…)
+                mined from each style's aroma/flavor/impression prose — no tags or numbers
+                involved. See the "flavor fingerprint" in the sidebar.
+              </p>
+            ) : (
+              <p style={{ color: 'var(--muted)', fontSize: 12 }}>
+                <span className="srmdot" style={{ background: 'var(--accent)', border: 'none' }} />{' '}
+                Jaccard similarity of guideline tags ·{' '}
+                <span className="srmdot" style={{ background: 'var(--blue)', border: 'none' }} />{' '}
+                closeness of z-scored vital statistics. Blend with the slider above.
+              </p>
+            )}
           </div>
           <NetworkGraph threshold={threshold} onPick={setSelectedId} />
         </div>

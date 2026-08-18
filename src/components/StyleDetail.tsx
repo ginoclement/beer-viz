@@ -1,10 +1,42 @@
 import type { BeerStyle } from '../lib/types'
 import { srmToHex } from '../lib/srm'
+import { DESCRIPTOR_FAMILIES, extractDescriptors } from '../lib/descriptors'
 
 function fmtRange(r: [number, number] | null, digits = 0): string {
   if (!r) return '—'
   const f = (x: number) => x.toFixed(digits)
   return r[0] === r[1] ? f(r[0]) : `${f(r[0])} – ${f(r[1])}`
+}
+
+function DescriptorFingerprint({ style }: { style: BeerStyle }) {
+  const descriptors = extractDescriptors(style)
+  if (descriptors.length === 0) return null
+  return (
+    <>
+      <h3>Flavor fingerprint (mined from the prose)</h3>
+      {DESCRIPTOR_FAMILIES.map((fam) => {
+        const ds = descriptors.filter((d) => d.family === fam)
+        if (ds.length === 0) return null
+        return (
+          <div key={fam} style={{ margin: '4px 0' }}>
+            <span style={{ color: 'var(--muted)', fontSize: 11.5, marginRight: 6 }}>{fam}</span>
+            <span className="tagchips" style={{ display: 'inline-flex', margin: 0 }}>
+              {ds.map((d) => (
+                <span
+                  key={d.name}
+                  className="chip"
+                  style={d.strength > 1 ? { color: 'var(--ink)', borderColor: 'var(--muted)' } : undefined}
+                  title={`mentioned in ${d.strength} of aroma/flavor/impression`}
+                >
+                  {d.name}
+                </span>
+              ))}
+            </span>
+          </div>
+        )
+      })}
+    </>
+  )
 }
 
 export default function StyleDetail({
@@ -70,6 +102,8 @@ export default function StyleDetail({
           </div>
         </>
       )}
+
+      <DescriptorFingerprint style={style} />
 
       {style.impression && (
         <>
