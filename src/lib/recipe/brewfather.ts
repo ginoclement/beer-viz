@@ -1,6 +1,46 @@
-import type { Recipe } from '../types'
+import type { Recipe, RecipeFermentable, RecipeHopAddition } from '../types'
 import { ebcToSrm } from '../srm'
 import { abvFromGravities, deriveRecipeTags } from './derive'
+
+/** Brewfather fermentables carry kg amounts; hops carry grams. */
+function parseIngredients(r: Record<string, unknown>): {
+  fermentables: RecipeFermentable[]
+  hopSchedule: RecipeHopAddition[]
+  yeastName: string | null
+} {
+  const fermentables: RecipeFermentable[] = []
+  if (Array.isArray(r.fermentables)) {
+    for (const f of r.fermentables as Record<string, unknown>[]) {
+      const kg = typeof f.amount === 'number' ? f.amount : NaN
+      if (typeof f.name === 'string' && isFinite(kg) && kg > 0) fermentables.push({ name: f.name, kg, pct: 0 })
+    }
+    const total = fermentables.reduce((s, f) => s + f.kg, 0)
+    for (const f of fermentables) f.pct = total > 0 ? +((f.kg / total) * 100).toFixed(1) : 0
+  }
+
+  const hopSchedule: RecipeHopAddition[] = []
+  if (Array.isArray(r.hops)) {
+    for (const h of r.hops as Record<string, unknown>[]) {
+      const g = typeof h.amount === 'number' ? h.amount : NaN
+      if (typeof h.name !== 'string' || !isFinite(g) || g <= 0) continue
+      const use = String(h.use ?? '').toLowerCase()
+      const time = typeof h.time === 'number' ? h.time : 0
+      let stage: RecipeHopAddition['stage']
+      if (use.includes('dry')) stage = 'dry'
+      else if (use.includes('aroma') || use.includes('hopstand') || use.includes('whirlpool')) stage = 'late'
+      else if (use.includes('first wort') || use.includes('mash')) stage = 'bittering'
+      else stage = time >= 45 ? 'bittering' : 'late'
+      hopSchedule.push({ name: h.name, g, stage })
+    }
+  }
+
+  let yeastName: string | null = null
+  if (Array.isArray(r.yeasts) && r.yeasts.length > 0) {
+    const y = r.yeasts[0] as Record<string, unknown>
+    if (typeof y.name === 'string') yeastName = y.name
+  }
+  return { fermentables, hopSchedule, yeastName }
+}
 
 /**
  * Parse a Brewfather recipe/batch JSON export. Brewfather exports carry
@@ -61,10 +101,14 @@ export function parseBrewfather(
 
   const name = typeof r.name === 'string' && r.name.trim() ? r.name : 'Imported recipe'
   const vitals = { og, fg, abv, ibu, srm }
+  const { fermentables, hopSchedule, yeastName } = parseIngredients(r)
   return {
     name,
     vitals,
     tags: deriveRecipeTags(vitals, { name, yeastType }),
     source: 'brewfather',
+    ...(fermentables.length > 0 ? { fermentables } : {}),
+    ...(hopSchedule.length > 0 ? { hopSchedule } : {}),
+    yeastName,
   }
 }

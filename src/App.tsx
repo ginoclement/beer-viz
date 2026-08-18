@@ -9,11 +9,13 @@ import CompareView from './views/CompareView'
 import RecipeView from './views/RecipeView'
 import BrowseView from './views/BrowseView'
 import HopsView from './views/HopsView'
+import IngredientsView from './views/IngredientsView'
 
 const TABS = [
   { id: 'space', label: '3D Style Space' },
   { id: 'similarity', label: 'Similarity' },
   { id: 'hops', label: 'Hops' },
+  { id: 'ingredients', label: 'Ingredients' },
   { id: 'browse', label: 'Browse' },
   { id: 'vitals', label: 'Vital Statistics' },
   { id: 'matrix', label: 'Matrix' },
@@ -95,6 +97,7 @@ function Shell() {
       {tab === 'similarity' && <SimilarityView goToSpace={() => setTab('space')} />}
       {tab === 'browse' && <BrowseView goToSpace={() => setTab('space')} />}
       {tab === 'hops' && <HopsView />}
+      {tab === 'ingredients' && <IngredientsView goToHops={() => setTab('hops')} />}
       {tab === 'vitals' && <VitalsView goToSpace={() => setTab('space')} />}
       {tab === 'matrix' && <MatrixView goToSpace={() => setTab('space')} />}
       {tab === 'compare' && <CompareView />}

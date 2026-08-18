@@ -50,6 +50,9 @@ interface AnalysisState {
   setAlpha: (a: number) => void
   selectedId: string | null
   setSelectedId: (id: string | null) => void
+  /** selected hop variety (Hops tab), cross-linkable from other views */
+  hopKey: string
+  setHopKey: (k: string) => void
   recipes: Recipe[]
   addRecipe: (r: Recipe) => void
   removeRecipe: (i: number) => void
@@ -107,6 +110,7 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
   const [colorBy, setColorBy] = useState<ColorBy>('cluster')
   const [alpha, setAlpha] = useState(0.5)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [hopKey, setHopKey] = useState('citra')
   const [recipes, setRecipes] = useState<Recipe[]>(loadStoredRecipes)
 
   useEffect(() => {
@@ -187,6 +191,8 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
     setAlpha,
     selectedId,
     setSelectedId,
+    hopKey,
+    setHopKey,
     recipes,
     addRecipe: (r) => setRecipes((prev) => [...prev, r]),
     removeRecipe: (i) => setRecipes((prev) => prev.filter((_, j) => j !== i)),

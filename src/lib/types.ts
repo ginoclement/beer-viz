@@ -48,9 +48,26 @@ export interface Vitals {
   srm: number
 }
 
+export interface RecipeFermentable {
+  name: string
+  kg: number
+  /** share of the grist by weight, 0-100 */
+  pct: number
+}
+
+export interface RecipeHopAddition {
+  name: string
+  g: number
+  stage: 'bittering' | 'late' | 'dry'
+}
+
 export interface Recipe {
   name: string
   vitals: Vitals
   tags: string[]
   source: 'brewfather' | 'beerxml' | 'manual'
+  /** parsed ingredient bill, when the import carried one */
+  fermentables?: RecipeFermentable[]
+  hopSchedule?: RecipeHopAddition[]
+  yeastName?: string | null
 }

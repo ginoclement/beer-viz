@@ -787,8 +787,7 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
 }
 
 export default function HopsView() {
-  const { setSelectedId } = useAnalysis()
-  const [hopKey, setHopKey] = useState<string>('citra')
+  const { setSelectedId, hopKey, setHopKey } = useAnalysis()
   const hop = HOPS.find((h) => h.key === hopKey) ?? HOPS[0]
 
   return (

@@ -76,3 +76,53 @@ describe('deriveRecipeTags', () => {
     expect(tags).toContain('malty')
   })
 })
+
+describe('ingredient parsing', () => {
+  it('parses BeerXML fermentables and hop schedule', () => {
+    const xml = `<RECIPES><RECIPE>
+      <NAME>Hoppy</NAME><EST_OG>1.060</EST_OG><EST_FG>1.012</EST_FG><IBU>50</IBU><EST_COLOR>6</EST_COLOR>
+      <FERMENTABLES>
+        <FERMENTABLE><NAME>Pale Malt</NAME><AMOUNT>4.5</AMOUNT></FERMENTABLE>
+        <FERMENTABLE><NAME>Crystal 60</NAME><AMOUNT>0.5</AMOUNT></FERMENTABLE>
+      </FERMENTABLES>
+      <HOPS>
+        <HOP><NAME>Magnum</NAME><AMOUNT>0.020</AMOUNT><USE>Boil</USE><TIME>60</TIME></HOP>
+        <HOP><NAME>Citra</NAME><AMOUNT>0.030</AMOUNT><USE>Boil</USE><TIME>10</TIME></HOP>
+        <HOP><NAME>Mosaic</NAME><AMOUNT>0.050</AMOUNT><USE>Dry Hop</USE><TIME>4320</TIME></HOP>
+      </HOPS>
+      <YEAST><NAME>US-05</NAME><TYPE>Ale</TYPE></YEAST>
+    </RECIPE></RECIPES>`
+    const r = parseBeerXml(xml)
+    expect(r.fermentables).toHaveLength(2)
+    expect(r.fermentables![0]).toEqual({ name: 'Pale Malt', kg: 4.5, pct: 90 })
+    expect(r.hopSchedule).toEqual([
+      { name: 'Magnum', g: 20, stage: 'bittering' },
+      { name: 'Citra', g: 30, stage: 'late' },
+      { name: 'Mosaic', g: 50, stage: 'dry' },
+    ])
+    expect(r.yeastName).toBe('US-05')
+  })
+
+  it('parses Brewfather fermentables and hops', () => {
+    const r = parseBrewfather({
+      name: 'NEIPA',
+      og: 1.065,
+      fg: 1.014,
+      ibu: 40,
+      color: 5,
+      fermentables: [
+        { name: 'Pale Ale', amount: 5 },
+        { name: 'Flaked Oats', amount: 1 },
+      ],
+      hops: [
+        { name: 'Citra', amount: 30, use: 'Aroma', time: 0 },
+        { name: 'Galaxy', amount: 100, use: 'Dry Hop', time: 4 },
+        { name: 'Magnum', amount: 15, use: 'Boil', time: 60 },
+      ],
+      yeasts: [{ name: 'Verdant IPA', type: 'Ale' }],
+    })
+    expect(r.fermentables![1].pct).toBeCloseTo(16.7, 1)
+    expect(r.hopSchedule!.map((h) => h.stage)).toEqual(['late', 'dry', 'bittering'])
+    expect(r.yeastName).toBe('Verdant IPA')
+  })
+})

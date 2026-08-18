@@ -6,6 +6,8 @@ import { deriveRecipeTags } from '../lib/recipe/derive'
 import { jaccard } from '../lib/similarity'
 import { euclidean } from '../lib/similarity'
 import { srmToHex } from '../lib/srm'
+import { classifyMalt } from '../lib/ingredients'
+import { GristBar, HopScheduleList } from '../components/IngredientBill'
 import type { Recipe } from '../lib/types'
 
 function parseAny(text: string, colorUnit: 'auto' | 'srm' | 'ebc'): Recipe {
@@ -156,6 +158,27 @@ function RecipeCard({
           </span>
         ))}
       </div>
+      {recipe.fermentables && recipe.fermentables.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.7, color: 'var(--muted)', margin: '12px 0 2px' }}>
+            Grist
+          </h3>
+          <GristBar rows={recipe.fermentables.map((f) => ({ name: f.name, pct: f.pct, class: classifyMalt(f.name) }))} />
+        </>
+      )}
+      {recipe.hopSchedule && recipe.hopSchedule.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.7, color: 'var(--muted)', margin: '12px 0 2px' }}>
+            Hop schedule
+          </h3>
+          <HopScheduleList rows={recipe.hopSchedule} />
+        </>
+      )}
+      {recipe.yeastName && (
+        <p style={{ color: 'var(--ink-2)', fontSize: 12.5, margin: '8px 0 0' }}>
+          <span style={{ color: 'var(--muted)' }}>Yeast:</span> {recipe.yeastName}
+        </p>
+      )}
       <h3 style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.7, color: 'var(--muted)', margin: '12px 0 4px' }}>
         Closest styles
       </h3>
