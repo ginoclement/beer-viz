@@ -100,11 +100,22 @@ pull your recipes into `data/brewfather/` as importable JSON files.
 public recipe listings under an access arrangement with Brewer's Friend
 (IP-whitelisted on their side). `--rpm N` paces requests per minute (default
 10) — set it to whatever rate they approve. It fetches serially, backs off
-60s on 429/503, caches every page under `data/brewersfriend/cache/`, resumes
-across runs, and prefers each recipe's stable BeerXML export over HTML
-scraping. Output lands in `data/brewersfriend/recipes.jsonl` (git-ignored),
-and `npm run build:data` folds it into the Ingredients corpus automatically
-with `origin: 'brewersfriend'`. Because the parser was written against
+60s on 429/503, caches every page under `data/brewersfriend/cache/`, and
+prefers each recipe's stable BeerXML export over HTML scraping. Output lands
+in `data/brewersfriend/recipes.jsonl` (git-ignored), and `npm run build:data`
+folds it into the Ingredients corpus automatically with `origin:
+'brewersfriend'`.
+
+*Crash-safe resume*: a checkpoint at `data/brewersfriend/progress.json`
+records the last fully-processed listing page and any permanently-skipped
+recipe ids, written atomically after every page. If a crawl crashes or is
+interrupted, just rerun the same command — it continues from the next listing
+page instead of re-walking from the top, and skips recipes already saved
+(transient network failures are left for retry; only unparseable pages are
+recorded as skipped). Checkpoints are keyed by crawl mode, so the default
+listing and each `--query "…"` track independently. `--start-page N` forces a
+specific page; `--restart` ignores the checkpoint and re-walks the listings
+from page 1 (already-collected recipes are still skipped, so no duplicates). Because the parser was written against
 fixture markup, calibrate it on one real saved page first — your own recipe
 pages are ideal: save one from the browser and run
 `node scripts/crawl-brewersfriend.mjs --parse-file saved-page.html` (fully

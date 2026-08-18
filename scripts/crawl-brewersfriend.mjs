@@ -21,7 +21,7 @@
 //     to parsing the HTML page
 //   - appends normalized recipes to data/brewersfriend/recipes.jsonl;
 //     `npm run build:data` then folds them into the Ingredients corpus
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseListing, parseRecipePage, parseBeerXml } from './lib/brewersfriend.mjs'
@@ -69,11 +69,54 @@ if (parseFile || parseXmlFile) {
 const RPM = Math.max(parseFloat(flag('--rpm')) || 10, 0.1)
 const DELAY = Math.round(60_000 / RPM)
 const MAX = parseInt(flag('--max')) || 200
-const START_PAGE = parseInt(flag('--start-page')) || 1
+const START_PAGE_ARG = parseInt(flag('--start-page')) || null
 const QUERY = typeof flag('--query') === 'string' ? flag('--query') : null
+const RESTART = args.includes('--restart')
 
 mkdirSync(cacheDir, { recursive: true })
 console.log(`rate: ${RPM} requests/minute (one request every ${(DELAY / 1000).toFixed(1)}s)`)
+
+// --------------------------------------------------------------- checkpoint
+
+// Progress is keyed by crawl mode (default listing vs. each search query) so
+// switching --query keeps independent checkpoints. Written atomically after
+// every fully-processed listing page and whenever a recipe is permanently
+// skipped, so a crash resumes from the exact page it was on rather than
+// re-walking the listings from the top.
+const progressFile = join(outDir, 'progress.json')
+const modeKey = QUERY ? `search:${QUERY}` : 'listing'
+
+const loadProgress = () => {
+  try {
+    return JSON.parse(readFileSync(progressFile, 'utf8'))
+  } catch {
+    return {}
+  }
+}
+const allProgress = RESTART ? {} : loadProgress()
+const progress = allProgress[modeKey] ?? { lastCompletedPage: 0, skippedIds: [] }
+// permanently-skipped ids (parse-empty / markup drift) — never worth retrying;
+// transient network failures are NOT recorded here so they retry next run.
+const skipped = new Set(progress.skippedIds ?? [])
+
+let saveTimer = null
+const saveProgress = () => {
+  allProgress[modeKey] = {
+    lastCompletedPage: progress.lastCompletedPage,
+    skippedIds: [...skipped],
+    collected: seen.size,
+    updatedAt: new Date().toISOString(),
+  }
+  // atomic write: a crash mid-write can't corrupt the checkpoint
+  const tmp = `${progressFile}.tmp`
+  writeFileSync(tmp, JSON.stringify(allProgress, null, 2))
+  renameSync(tmp, progressFile)
+  saveTimer = null
+}
+// coalesce frequent saves (per-recipe skips) into the event loop
+const scheduleSave = () => {
+  if (!saveTimer) saveTimer = setTimeout(saveProgress, 0)
+}
 
 // ------------------------------------------------------------------- fetch
 
@@ -116,7 +159,16 @@ if (existsSync(outFile)) {
       /* skip partial line */
     }
   }
-  console.log(`resuming — ${seen.size} recipes already collected`)
+}
+
+// resume point: explicit --start-page wins; otherwise continue from the last
+// fully-processed page recorded in the checkpoint.
+const startPage = START_PAGE_ARG ?? progress.lastCompletedPage + 1
+if (seen.size || progress.lastCompletedPage) {
+  console.log(
+    `resuming '${modeKey}' — ${seen.size} recipes collected, ${skipped.size} skipped, ` +
+      `last completed page ${progress.lastCompletedPage}; starting at page ${startPage}`,
+  )
 }
 
 const listPath = (n) =>
@@ -127,7 +179,7 @@ const listPath = (n) =>
       : '/homebrew-recipes/'
 
 let collected = 0
-let page = START_PAGE
+let page = startPage
 
 outer: while (collected < MAX) {
   console.log(`listing page ${page}…`)
@@ -135,7 +187,7 @@ outer: while (collected < MAX) {
   try {
     listing = await pacedFetch(`${BASE}${listPath(page)}`)
   } catch (e) {
-    console.log(`  listing failed: ${e.message} — stopping`)
+    console.log(`  listing failed: ${e.message} — stopping (rerun to resume from page ${page})`)
     break
   }
   const links = parseListing(listing)
@@ -144,9 +196,15 @@ outer: while (collected < MAX) {
     break
   }
 
+  let pageFullyProcessed = true
   for (const link of links) {
-    if (collected >= MAX) break outer
-    if (seen.has(link.id)) continue
+    if (collected >= MAX) {
+      // hit the batch cap mid-page — leave this page uncommitted so the
+      // next run re-scans it and picks up the recipes we skipped here
+      pageFullyProcessed = false
+      break
+    }
+    if (seen.has(link.id) || skipped.has(link.id)) continue
 
     let recipe = null
     try {
@@ -162,12 +220,18 @@ outer: while (collected < MAX) {
         recipe = parseRecipePage(text, link.url)
       }
     } catch (e) {
+      // transient (network/HTTP) failure — NOT recorded as skipped, so a
+      // later run retries this recipe
       console.log(`  ${link.id} failed: ${e.message}`)
       continue
     }
 
     if (!recipe?.name || !recipe.malts?.length) {
+      // permanent skip: cache is populated but nothing parses — record it so
+      // reruns don't keep re-parsing the same dead page
       console.log(`  ${link.id} parsed empty (markup drift?) — skipping`)
+      skipped.add(link.id)
+      scheduleSave()
       continue
     }
     recipe.url = link.url
@@ -177,8 +241,17 @@ outer: while (collected < MAX) {
     collected++
     console.log(`  ✓ ${recipe.name} (${recipe.style ?? 'no style'}) [${collected}/${MAX}]`)
   }
-  page++
+
+  if (pageFullyProcessed) {
+    progress.lastCompletedPage = page
+    saveProgress()
+    page++
+  } else {
+    break outer
+  }
 }
 
+if (saveTimer) saveProgress() // flush any pending skip saves
 console.log(`\ndone — ${collected} new recipes appended to ${outFile}`)
+console.log(`checkpoint at ${progressFile} (mode '${modeKey}', through page ${progress.lastCompletedPage})`)
 console.log('run `npm run build:data` to fold them into the Ingredients corpus.')
