@@ -1,0 +1,34 @@
+{
+  "name": "beer-viz",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Interactive data analysis of beer style guidelines: dimensionality reduction, clustering, and similarity over BJCP and Brewers Association styles, with live recipe projection.",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run build:data && tsc -b && vite build",
+    "build:data": "node scripts/build-data.mjs",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@react-three/drei": "^9.114.3",
+    "@react-three/fiber": "^8.17.10",
+    "d3-force": "^3.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.169.0",
+    "umap-js": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/d3-force": "^3.0.10",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@types/three": "^0.169.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.9",
+    "vitest": "^2.1.3"
+  }
+}
