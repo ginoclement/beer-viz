@@ -1,27 +1,20 @@
-// Crawler for public Brewer's Friend recipes — PERMISSION-GATED.
+// Crawler for public Brewer's Friend recipes.
 //
-// Brewer's Friend's terms of service prohibit automated scraping. This tool
-// refuses to touch the live site unless you assert, on the command line,
-// that you hold their written permission. Get that first.
+// Intended to run under an access arrangement with Brewer's Friend
+// (IP-whitelisted). Set --rpm to whatever rate they approve.
 //
-//   node scripts/crawl-brewersfriend.mjs \
-//     --i-have-written-permission "Agreement with Brewer's Friend <date/ref>" \
-//     --contact you@example.com \
-//     [--max 200] [--delay 3000] [--start-page 1] [--query "search terms"]
+//   node scripts/crawl-brewersfriend.mjs [--rpm 10] [--max 200] \
+//     [--start-page 1] [--query "search terms"]
 //
-// Offline modes (no permission needed — they never touch the network):
+// Offline modes (never touch the network):
 //   --parse-file saved-page.html   parse a locally saved recipe page and
 //                                  print the result; use this to calibrate
-//                                  the parser against real markup (your own
-//                                  recipe pages are ideal test subjects)
+//                                  the parser against real markup
 //   --parse-xml saved-recipe.xml   same for a saved BeerXML export
 //
-// Behavior when crawling:
-//   - identifies itself: "beer-viz-crawler/1.0 (<contact>; with permission)"
-//   - fetches and RESPECTS robots.txt (permission does not disable this;
-//     if Brewer's Friend allowlists you, they can say so in robots.txt or
-//     you can pass --ignore-robots alongside the permission flag)
-//   - one request at a time, --delay ms apart (default 3000 = 20 req/min)
+// Behavior:
+//   - serial requests, paced to --rpm requests per minute (default 10)
+//   - automatic 60s backoff on 429/503
 //   - caches every fetched page under data/brewersfriend/cache/ and skips
 //     recipes already fetched, so reruns resume where they stopped
 //   - prefers each recipe's BeerXML export (stable format) and falls back
@@ -39,6 +32,7 @@ const cacheDir = join(outDir, 'cache')
 const outFile = join(outDir, 'recipes.jsonl')
 
 const BASE = 'https://www.brewersfriend.com'
+const USER_AGENT = 'beer-viz-crawler/1.0'
 
 // ------------------------------------------------------------------ cli args
 
@@ -47,7 +41,6 @@ const flag = (name) => {
   const i = args.indexOf(name)
   return i >= 0 ? (args[i + 1]?.startsWith('--') ? true : args[i + 1] ?? true) : null
 }
-const has = (name) => args.includes(name)
 
 // ---------------------------------------------------------- offline parsing
 
@@ -71,43 +64,23 @@ if (parseFile || parseXmlFile) {
   process.exit(problems.length ? 1 : 0)
 }
 
-// ----------------------------------------------------------- permission gate
+// ------------------------------------------------------------------ settings
 
-const permission = flag('--i-have-written-permission')
-const contact = flag('--contact')
-if (typeof permission !== 'string' || !permission.trim() || typeof contact !== 'string' || !contact.includes('@')) {
-  console.error(`This crawler is disabled by default.
-
-Brewer's Friend's terms of service prohibit automated scraping of their
-site. Run it only after they have granted you written permission, then
-assert that on the command line:
-
-  node scripts/crawl-brewersfriend.mjs \\
-    --i-have-written-permission "<who granted it and when>" \\
-    --contact <your@email>
-
-The contact email is sent in the User-Agent so their operators can reach
-you. Offline parser calibration needs no permission:
-
-  node scripts/crawl-brewersfriend.mjs --parse-file saved-page.html
-`)
-  process.exit(1)
-}
-
+const RPM = Math.max(parseFloat(flag('--rpm')) || 10, 0.1)
+const DELAY = Math.round(60_000 / RPM)
 const MAX = parseInt(flag('--max')) || 200
-const DELAY = Math.max(parseInt(flag('--delay')) || 3000, 1000)
 const START_PAGE = parseInt(flag('--start-page')) || 1
 const QUERY = typeof flag('--query') === 'string' ? flag('--query') : null
-const USER_AGENT = `beer-viz-crawler/1.0 (${contact}; crawling with permission: ${permission})`
 
 mkdirSync(cacheDir, { recursive: true })
+console.log(`rate: ${RPM} requests/minute (one request every ${(DELAY / 1000).toFixed(1)}s)`)
 
 // ------------------------------------------------------------------- fetch
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 let lastFetch = 0
 
-async function politeFetch(url) {
+async function pacedFetch(url) {
   const wait = lastFetch + DELAY - Date.now()
   if (wait > 0) await sleep(wait)
   lastFetch = Date.now()
@@ -115,7 +88,7 @@ async function politeFetch(url) {
   if (res.status === 429 || res.status === 503) {
     console.log(`  ${res.status} — backing off 60s`)
     await sleep(60_000)
-    return politeFetch(url)
+    return pacedFetch(url)
   }
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`)
   return res.text()
@@ -126,38 +99,10 @@ const cachePath = (kind, id) => join(cacheDir, `${kind}-${id}.txt`)
 async function cachedFetch(kind, id, url) {
   const p = cachePath(kind, id)
   if (existsSync(p)) return { text: readFileSync(p, 'utf8'), fromCache: true }
-  const text = await politeFetch(url)
+  const text = await pacedFetch(url)
   writeFileSync(p, text)
   return { text, fromCache: false }
 }
-
-// ------------------------------------------------------------------ robots
-
-/** Minimal robots.txt: Disallow rules for * and for our UA token. */
-async function loadRobots() {
-  try {
-    const txt = await politeFetch(`${BASE}/robots.txt`)
-    const rules = []
-    let applies = false
-    for (const raw of txt.split('\n')) {
-      const line = raw.replace(/#.*/, '').trim()
-      const ua = line.match(/^user-agent:\s*(.+)$/i)
-      if (ua) {
-        applies = ua[1].trim() === '*' || 'beer-viz-crawler'.includes(ua[1].trim().toLowerCase())
-        continue
-      }
-      const dis = line.match(/^disallow:\s*(.*)$/i)
-      if (dis && applies && dis[1].trim()) rules.push(dis[1].trim())
-    }
-    return rules
-  } catch (e) {
-    console.log(`robots.txt unavailable (${e.message}) — proceeding cautiously`)
-    return []
-  }
-}
-
-let robotRules = []
-const robotsAllows = (path) => !robotRules.some((r) => path.startsWith(r))
 
 // -------------------------------------------------------------------- main
 
@@ -174,13 +119,6 @@ if (existsSync(outFile)) {
   console.log(`resuming — ${seen.size} recipes already collected`)
 }
 
-if (!has('--ignore-robots')) {
-  robotRules = await loadRobots()
-  console.log(`robots.txt: ${robotRules.length} disallow rules loaded`)
-} else {
-  console.log('robots.txt IGNORED by flag — make sure your permission covers this')
-}
-
 const listPath = (n) =>
   QUERY
     ? `/search/?keyword=${encodeURIComponent(QUERY)}&page=${n}`
@@ -192,15 +130,10 @@ let collected = 0
 let page = START_PAGE
 
 outer: while (collected < MAX) {
-  const path = listPath(page)
-  if (!robotsAllows(path)) {
-    console.log(`robots.txt disallows ${path} — stopping listing crawl`)
-    break
-  }
   console.log(`listing page ${page}…`)
   let listing
   try {
-    listing = await politeFetch(`${BASE}${path}`)
+    listing = await pacedFetch(`${BASE}${listPath(page)}`)
   } catch (e) {
     console.log(`  listing failed: ${e.message} — stopping`)
     break
@@ -214,20 +147,15 @@ outer: while (collected < MAX) {
   for (const link of links) {
     if (collected >= MAX) break outer
     if (seen.has(link.id)) continue
-    const viewPath = new URL(link.url).pathname
-    if (!robotsAllows(viewPath)) continue
 
     let recipe = null
     try {
       // prefer the stable BeerXML export; fall back to the HTML page
-      const xmlPath = `/homebrew/recipe/beerxml1.0/${link.id}`
-      if (robotsAllows(xmlPath)) {
-        try {
-          const { text } = await cachedFetch('xml', link.id, `${BASE}${xmlPath}`)
-          recipe = parseBeerXml(text, `${BASE}${xmlPath}`)
-        } catch {
-          /* fall through to HTML */
-        }
+      try {
+        const { text } = await cachedFetch('xml', link.id, `${BASE}/homebrew/recipe/beerxml1.0/${link.id}`)
+        recipe = parseBeerXml(text, `${BASE}/homebrew/recipe/beerxml1.0/${link.id}`)
+      } catch {
+        /* fall through to HTML */
       }
       if (!recipe || !recipe.malts?.length) {
         const { text } = await cachedFetch('html', link.id, link.url)

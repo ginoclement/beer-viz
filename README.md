@@ -96,18 +96,17 @@ recipes (credential-scoped): run
 (credentials from Brewfather → Settings → API with the *Read Recipes* scope) to
 pull your recipes into `data/brewfather/` as importable JSON files.
 
-**Brewer's Friend crawler (permission-gated)**: `scripts/crawl-brewersfriend.mjs`
-is ready for the day Brewer's Friend grants written permission to crawl — it
-refuses to run without a `--i-have-written-permission "<grant ref>"` +
-`--contact <email>` assertion, identifies itself in the User-Agent, respects
-robots.txt, fetches serially with a ≥1s (default 3s) delay, backs off on
-429/503, caches every page under `data/brewersfriend/cache/`, and resumes
-across runs. It prefers each recipe's stable BeerXML export over HTML scraping.
-Output lands in `data/brewersfriend/recipes.jsonl` (git-ignored), and
-`npm run build:data` folds it into the Ingredients corpus automatically with
-`origin: 'brewersfriend'`. Because the parser was written against fixture
-markup, calibrate it on one real saved page first — your own recipe pages are
-ideal: save one from the browser and run
+**Brewer's Friend crawler**: `scripts/crawl-brewersfriend.mjs` crawls the
+public recipe listings under an access arrangement with Brewer's Friend
+(IP-whitelisted on their side). `--rpm N` paces requests per minute (default
+10) — set it to whatever rate they approve. It fetches serially, backs off
+60s on 429/503, caches every page under `data/brewersfriend/cache/`, resumes
+across runs, and prefers each recipe's stable BeerXML export over HTML
+scraping. Output lands in `data/brewersfriend/recipes.jsonl` (git-ignored),
+and `npm run build:data` folds it into the Ingredients corpus automatically
+with `origin: 'brewersfriend'`. Because the parser was written against
+fixture markup, calibrate it on one real saved page first — your own recipe
+pages are ideal: save one from the browser and run
 `node scripts/crawl-brewersfriend.mjs --parse-file saved-page.html` (fully
 offline); it prints what it extracted and flags anything the live markup
 breaks. Parsers live in `scripts/lib/brewersfriend.mjs` with tests in
