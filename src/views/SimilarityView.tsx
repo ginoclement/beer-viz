@@ -16,6 +16,7 @@ import { descriptorSimilarity } from '../lib/descriptors'
 import { clusterColor } from '../lib/palette'
 import { attachPanZoom, identityView } from '../lib/panZoom'
 import StyleDetail from '../components/StyleDetail'
+import ChartHelp from '../components/ChartHelp'
 
 interface Node extends SimulationNodeDatum {
   i: number
@@ -201,6 +202,44 @@ function NetworkGraph({
 
   return (
     <div className="netwrap" ref={wrapRef}>
+      <div className="cardtools">
+        <ChartHelp title="Reading the similarity network">
+          <p>
+            Every node is a beer style with published vital statistics; its color is the
+            k-means cluster it falls into (the same families as the 3D space). A line joins
+            two styles whenever their <strong>blended similarity</strong> is above the
+            threshold slider.
+          </p>
+          <h3>How similarity is computed</h3>
+          <ul>
+            <li>
+              <strong>Tags</strong>: Jaccard overlap of the guideline's tags (hoppy, roasty,
+              pale-color…).
+            </li>
+            <li>
+              <strong>Numbers</strong>: closeness of seven z-scored vitals — OG, FG, ABV,
+              IBU, log SRM, apparent attenuation, and BU:GU balance.
+            </li>
+            <li>
+              The <strong>Tags ⇄ numbers blend</strong> slider mixes the two (0 = numbers
+              only, 1 = tags only).
+            </li>
+          </ul>
+          <h3>How to read the layout</h3>
+          <p>
+            The force layout pulls linked styles together, so tight clumps are families of
+            near-interchangeable styles and isolated nodes have no close relative above the
+            threshold. Only <em>connectivity</em> is meaningful — the absolute position and
+            rotation of the picture are arbitrary.
+          </p>
+          <h3>Interactions</h3>
+          <p>
+            Click a node to inspect it and re-rank its neighbors in the table. Scroll to
+            zoom (style names appear), drag to pan, double-click to reset. Lower the
+            threshold to reveal weaker relationships; raise it to keep only near-twins.
+          </p>
+        </ChartHelp>
+      </div>
       <canvas
         ref={canvasRef}
         onMouseMove={(e) => {

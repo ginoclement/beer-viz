@@ -4,6 +4,7 @@ import { combinedSimilarityMatrix } from '../lib/similarity'
 import { hclustTree, type DendroNode } from '../lib/hclust'
 import { clusterColor } from '../lib/palette'
 import StyleDetail from '../components/StyleDetail'
+import ChartHelp from '../components/ChartHelp'
 import type { BeerStyle } from '../lib/types'
 
 /** Sequential blue ramp (light -> dark reversed for dark surface: low sim recedes). */
@@ -167,6 +168,31 @@ export default function MatrixView({ goToSpace }: { goToSpace?: () => void }) {
         </div>
         <div className="charts" style={{ position: 'relative' }}>
           <div className="chart-card" style={{ display: 'inline-block' }}>
+            <div className="cardtools">
+              <ChartHelp title="Reading the similarity matrix">
+                <p>
+                  A grid of every style against every other style. Cell brightness is
+                  their blended similarity: Jaccard overlap of guideline tags mixed with
+                  closeness of seven z-scored vitals (OG, FG, ABV, IBU, log SRM,
+                  attenuation, BU:GU) — the slider above sets the mix.
+                </p>
+                <h3>How to read it</h3>
+                <ul>
+                  <li>The diagonal is every style at 100% with itself.</li>
+                  <li>
+                    Rows and columns are ordered by hierarchical clustering, so{' '}
+                    <strong>bright square blocks along the diagonal are families</strong> —
+                    bitters, bocks, IPAs — discovered without being told what a family is.
+                  </li>
+                  <li>
+                    The colored strips on the edges show each style's k-means cluster; a
+                    clean block whose strip is one color means the two methods agree.
+                  </li>
+                </ul>
+                <h3>Interactions</h3>
+                <p>Hover any cell for the pair's score; click to open the row's style.</p>
+              </ChartHelp>
+            </div>
             <h2>Style similarity matrix</h2>
             <p className="sub">
               Cell brightness = blended Jaccard + vital-statistics similarity. Edge strips
@@ -205,6 +231,29 @@ export default function MatrixView({ goToSpace }: { goToSpace?: () => void }) {
           </div>
           {tree && (
             <div className="chart-card" style={{ display: 'inline-block', verticalAlign: 'top', marginLeft: 20 }}>
+              <div className="cardtools">
+                <ChartHelp title="Reading the family tree">
+                  <p>
+                    The same hierarchical clustering as the matrix, drawn as a dendrogram.
+                    Each style starts as its own branch; the algorithm repeatedly merges
+                    the two most-similar groups until one tree remains.
+                  </p>
+                  <h3>How to read it</h3>
+                  <ul>
+                    <li>
+                      <strong>Where branches join matters</strong>: styles that merge far
+                      to the right are near-twins; a branch that stays alone until far
+                      left has no close relative in the guideline.
+                    </li>
+                    <li>The dot color is the style's k-means cluster.</li>
+                  </ul>
+                  <h3>Interactions</h3>
+                  <p>
+                    Click a style name to open it. Move the tags ⇄ numbers blend to watch
+                    the tree reorganize around tradition versus raw numbers.
+                  </p>
+                </ChartHelp>
+              </div>
               <h2>Family tree</h2>
               <p className="sub">
                 The same clustering as a dendrogram: styles that merge early (far right) are

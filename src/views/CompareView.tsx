@@ -7,6 +7,7 @@ import { GUIDE_COLORS } from '../lib/palette'
 import { matchGuides } from '../lib/guideMatch'
 import { useCardExpand } from '../components/CardExpand'
 import { attachPanZoom, identityView } from '../lib/panZoom'
+import ChartHelp from '../components/ChartHelp'
 
 function Delta({ a, b, digits = 1, unit = '' }: { a: number | null; b: number | null; digits?: number; unit?: string }) {
   if (a == null || b == null) return <span style={{ color: 'var(--muted)' }}>—</span>
@@ -84,7 +85,33 @@ function OverlayScatter({ guideA, guideB }: { guideA: GuideId; guideB: GuideId }
 
   return (
     <div className={`chart-card${cardClass}`}>
-      {button}
+      <div className="cardtools">
+        <ChartHelp title="Reading the cross-guideline map">
+          <p>
+            Styles from <strong>both selected guidelines</strong> are embedded together in
+            one PCA space built from their vitals and tags, then drawn on the first two
+            principal components. Color says which guideline a point comes from.
+          </p>
+          <h3>How to read it</h3>
+          <ul>
+            <li>
+              Where the two systems describe the same beer, a dot of each color lands in
+              the same spot — the overlap is the shared ground.
+            </li>
+            <li>
+              A region dense in only one color is territory that guideline covers and the
+              other doesn't (e.g. the BA's many historical and regional styles).
+            </li>
+            <li>Axes are abstract blends of the features; only proximity matters.</li>
+          </ul>
+          <h3>Interactions</h3>
+          <p>
+            Hover for names, scroll to zoom (names appear when close), drag to pan,
+            double-click to reset.
+          </p>
+        </ChartHelp>
+        {button}
+      </div>
       <h2>Two guidelines, one map</h2>
       <p className="sub">
         Styles from both guidelines embedded in a single PCA space (first two components).
@@ -227,7 +254,32 @@ export default function CompareView() {
         <div className="charts">
           <OverlayScatter guideA={guideA} guideB={guideB} />
           <div className={`chart-card${tableCard.cardClass}`}>
-            {tableCard.button}
+            <div className="cardtools">
+              <ChartHelp title="Reading the drift table">
+                <p>
+                  Styles present in <strong>both guidelines</strong>, paired by name. The
+                  matcher normalizes names (accents, category codes, "India Pale
+                  Ale"→"IPA"), expands alternatives ("Special Bitter or Best Bitter"
+                  matches "Best Bitter"), bridges German spellings
+                  (Münchner→Munich, Oktoberfest→Märzen), and falls back to word overlap —
+                  fuzzy pairings carry an ≈ pill showing the other guideline's name.
+                </p>
+                <h3>How to read it</h3>
+                <ul>
+                  <li>
+                    ▲▼ deltas compare the <em>midpoints</em> of each vital's published
+                    range, left guideline → right guideline; "=" means effectively
+                    unchanged.
+                  </li>
+                  <li>
+                    <strong>Changed</strong> filters to styles whose numbers actually
+                    moved; <strong>Only in…</strong> lists styles with no counterpart —
+                    real additions and removals between editions or systems.
+                  </li>
+                </ul>
+              </ChartHelp>
+              {tableCard.button}
+            </div>
             {(show === 'changed' || show === 'all') && (
               <>
                 <h2>

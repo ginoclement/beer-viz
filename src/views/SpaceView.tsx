@@ -8,6 +8,7 @@ import { srmToHex } from '../lib/srm'
 import { midVitals } from '../lib/features'
 import { euclidean, jaccard } from '../lib/similarity'
 import StyleDetail from '../components/StyleDetail'
+import ChartHelp from '../components/ChartHelp'
 import type { BeerStyle } from '../lib/types'
 
 interface Hover {
@@ -416,6 +417,41 @@ export default function SpaceView() {
           </label>
         </div>
         <div className="canvas-wrap" ref={wrapRef}>
+          <div className="cardtools">
+            <ChartHelp title="Reading the 3D style space">
+              <p>
+                Every style with full vital statistics becomes a point in a
+                ~60-dimensional feature space: seven numeric features (OG, FG, ABV, IBU,
+                log SRM, apparent attenuation, BU:GU balance, all z-scored) plus one
+                column per guideline tag. That space is reduced to the three axes you see.
+              </p>
+              <h3>The two projections</h3>
+              <ul>
+                <li>
+                  <strong>PCA</strong>: axes are the directions of greatest variance; the
+                  percentages on the axis labels say how much of the total spread each one
+                  captures. Distances are roughly faithful, and the axes mean something.
+                </li>
+                <li>
+                  <strong>UMAP</strong>: a nonlinear layout that keeps neighbors together.
+                  Local clumps are meaningful; axis directions and large-scale distances
+                  are not.
+                </li>
+              </ul>
+              <h3>Color</h3>
+              <p>
+                <strong>Cluster</strong> colors come from k-means run in the full feature
+                space (not on the 3D picture), so a cluster can look stretched here.
+                <strong> Beer color</strong> paints each point its actual SRM.
+              </p>
+              <h3>Interactions</h3>
+              <p>
+                Drag to orbit, scroll to zoom, click a point for its guideline entry.
+                Moving <em>k</em> or the tag weight re-clusters live. Imported recipes
+                appear as ◆ diamonds tethered to their three closest styles.
+              </p>
+            </ChartHelp>
+          </div>
           <Canvas
             dpr={[1, 2]}
             camera={{ fov: 42, near: 0.01, far: 50 }}

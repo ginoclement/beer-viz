@@ -3,6 +3,7 @@ import { useAnalysis } from '../state/useAnalysis'
 import { midVitals } from '../lib/features'
 import { srmToHex } from '../lib/srm'
 import type { BeerStyle } from '../lib/types'
+import ChartHelp from '../components/ChartHelp'
 
 const W = 860
 const H = 520
@@ -33,6 +34,35 @@ function Scatter() {
 
   return (
     <div className="chart-card">
+      <div className="cardtools">
+        <ChartHelp title="Reading bitterness vs. strength">
+          <p>
+            Each dot is one style plotted at the <strong>midpoint of its published
+            ranges</strong>: alcohol (ABV) across, bitterness (IBU) up, and painted its
+            actual beer color (SRM).
+          </p>
+          <h3>How to read it</h3>
+          <ul>
+            <li>
+              The rough diagonal drift is the balance rule: bigger beers carry more
+              bitterness to stay in proportion.
+            </li>
+            <li>
+              Styles far <em>above</em> the trend are aggressively bitter for their size
+              (IPAs); far <em>below</em> are malt-led (bocks, milds, wheat beers).
+            </li>
+            <li>
+              Dark dots low on the chart are the roasty-but-gentle family; pale dots high
+              up are the pale hop bombs.
+            </li>
+          </ul>
+          <h3>Interactions</h3>
+          <p>
+            Hover for the style; click to select it — whiskers then show its full
+            published ABV and IBU ranges rather than just the midpoint.
+          </p>
+        </ChartHelp>
+      </div>
       <h2>Bitterness vs. strength</h2>
       <p className="sub">
         Each style at its midpoint ABV and IBU, painted its actual color (SRM). Hover for
@@ -145,6 +175,27 @@ function SrmLadder() {
 
   return (
     <div className="chart-card">
+      <div className="cardtools">
+        <ChartHelp title="Reading the color ladder">
+          <p>
+            Every style's published SRM color range, sorted palest to darkest, with each
+            bar drawn in the true color of that range.
+          </p>
+          <h3>How to read it</h3>
+          <ul>
+            <li>The bar's left and right edges are the style's allowed extremes.</li>
+            <li>
+              A <strong>wide bar</strong> means the guideline tolerates many colors (many
+              specialty styles); a narrow bar is a tightly defined look.
+            </li>
+            <li>
+              The scale caps at SRM 45 — beyond that everything reads as black to the eye.
+            </li>
+          </ul>
+          <h3>Interactions</h3>
+          <p>Hover to highlight a row; click to open the style.</p>
+        </ChartHelp>
+      </div>
       <h2>The color ladder</h2>
       <p className="sub">
         Every style's published SRM range, palest to darkest, drawn in true color. The bar
@@ -235,6 +286,33 @@ function AttenuationChart() {
 
   return (
     <div className="chart-card">
+      <div className="cardtools">
+        <ChartHelp title="Reading the fermentability chart">
+          <p>
+            Across: <strong>original gravity</strong> — how much sugar the beer starts
+            with, i.e. how big it is. Up: <strong>apparent attenuation</strong> — the
+            share of that sugar the yeast consumed, computed as (OG − FG) / (OG − 1). Dots
+            are painted the style's actual color.
+          </p>
+          <h3>How to read it</h3>
+          <ul>
+            <li>
+              Top of the chart = dry, crisp finishes (saisons, pilsners); bottom = sweet,
+              full beers (milk stouts, doppelbocks).
+            </li>
+            <li>
+              Moving right means more starting sugar; a big beer that is also high up
+              (barleywine at 80%+) finishes strong <em>and</em> dry.
+            </li>
+            <li>
+              Vertical neighbors share strength but differ completely in body — a useful
+              lens the ABV number alone hides.
+            </li>
+          </ul>
+          <h3>Interactions</h3>
+          <p>Hover for the style; click to open it.</p>
+        </ChartHelp>
+      </div>
       <h2>Fermentability: original gravity vs. apparent attenuation</h2>
       <p className="sub">
         How big the beer starts vs. how dry it finishes. Sweet, full styles sink to the

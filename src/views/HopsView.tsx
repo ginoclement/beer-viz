@@ -24,6 +24,7 @@ import {
 import { fitPca, pcaTransformAll } from '../lib/pca'
 import { attachPanZoom, identityView } from '../lib/panZoom'
 import { useCardExpand } from '../components/CardExpand'
+import ChartHelp from '../components/ChartHelp'
 
 const PURPOSE_COLORS: Record<string, string> = {
   Aroma: '#3987e5',
@@ -247,6 +248,36 @@ function PairingCard({ onPickHop }: { onPickHop: (k: string) => void }) {
 
   return (
     <div className="chart-card">
+      <div className="cardtools">
+        <ChartHelp title="Reading the hop recommendations">
+          <p>
+            For the chosen beer style, all 210 hop varieties are scored and ranked. The
+            three mini-bars in the last column are the three signals behind each score:
+          </p>
+          <ul>
+            <li>
+              <strong>Aroma</strong> (gold): how well the hop's measured aroma profile
+              matches the hop character the style's guideline prose actually asks for —
+              e.g. "citrus, piney" for an American IPA.
+            </li>
+            <li>
+              <strong>Tradition</strong> (blue): whether the hop grows where the style
+              comes from; craft-era styles accept any New World hop.
+            </li>
+            <li>
+              <strong>Role</strong> (gray): whether the hop's alpha-acid range suits the
+              style's bitterness load — a 4% noble hop can't cleanly bitter a double IPA.
+            </li>
+          </ul>
+          <h3>How to read it</h3>
+          <p>
+            A high match with a long gold bar is an aroma-driven pick; a long blue bar
+            with a short gold one is the traditional choice. The "thiol" pill marks
+            varieties rich in modern tropical thiol precursors. Click a row to open the
+            hop's full chemistry.
+          </p>
+        </ChartHelp>
+      </div>
       <h2>Hop recommendations by style</h2>
       <p className="sub">
         Scored from three signals: how the hop's measured aroma profile matches the hop
@@ -383,7 +414,34 @@ function AromaScatter({ selectedKey, onPickHop }: { selectedKey: string | null; 
 
   return (
     <div className={`chart-card${cardClass}`}>
-      {button}
+      <div className="cardtools">
+        <ChartHelp title="Reading the hop aroma map">
+          <p>
+            Every hop with a published sensory profile is a point. Producers rate each
+            variety 0–5 on nine aroma axes (citrus, tropical, floral, spice…); PCA
+            squeezes those nine numbers onto this 2D map, so{' '}
+            <strong>hops that smell alike sit near each other</strong>.
+          </p>
+          <h3>How to read it</h3>
+          <ul>
+            <li>Color is the brewing purpose: aroma, bittering, or dual-purpose.</li>
+            <li>
+              Neighborhoods are substitution candidates — a hop's nearest neighbors on the
+              map usually work in the same recipes.
+            </li>
+            <li>
+              Axes have no fixed meaning; direction and distance within a neighborhood are
+              what matter.
+            </li>
+          </ul>
+          <h3>Interactions</h3>
+          <p>
+            Click a dot to open the hop. Scroll to zoom — names appear once you're close —
+            drag to pan, double-click to reset.
+          </p>
+        </ChartHelp>
+        {button}
+      </div>
       <h2>The hop aroma map</h2>
       <p className="sub">
         PCA of each variety's 9-axis sensory profile (producer spider charts). Neighboring
@@ -659,7 +717,34 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
 
   return (
     <div className={`chart-card${cardClass}`}>
-      {button}
+      <div className="cardtools">
+        <ChartHelp title="Reading the kinship network">
+          <p>Each node is a hop variety, colored by brewing purpose. Two kinds of edge:</p>
+          <ul>
+            <li>
+              <strong>Gold edges</strong> are producer-listed relationships — "brews well
+              with" and published substitutes.
+            </li>
+            <li>
+              <strong>Gray edges</strong> are computed: they join hops whose measured
+              aroma profiles are nearly identical (above the similarity threshold
+              slider).
+            </li>
+          </ul>
+          <h3>How to read it</h3>
+          <p>
+            Clumps are families of interchangeable hops; a gold edge <em>without</em> a
+            gray one is a pairing chosen for contrast rather than likeness. Only the
+            connections are meaningful — the layout's absolute position is arbitrary.
+          </p>
+          <h3>Interactions</h3>
+          <p>
+            Click a node to open the hop. Scroll to zoom (names appear), drag to pan,
+            double-click to reset. Lower the threshold to admit looser aroma kinships.
+          </p>
+        </ChartHelp>
+        {button}
+      </div>
       <h2>Substitution &amp; kinship network</h2>
       <p className="sub">
         <span style={{ color: 'var(--accent-bright)' }}>Gold edges</span> are
