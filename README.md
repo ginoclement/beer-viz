@@ -56,10 +56,11 @@ npm test           # vitest suite for the analysis library
 npm run build      # rebuilds src/generated/guides.json, typechecks, bundles to dist/
 ```
 
-`dist/` is fully static with relative asset paths (`base: './'`), so it can be
-served from any subdirectory — copy it to wherever `/beer` is served from, or
-use the included GitHub Actions workflow (`.github/workflows/deploy.yml`) to
-publish to GitHub Pages on pushes to `main`.
+The site deploys on Vercel (framework auto-detected as Vite; `npm run build`
+regenerates the data files and bundles to `dist/`), redeploying on every push
+to the production branch. `dist/` is fully static with relative asset paths
+(`base: './'`), so the same build also works from any subdirectory on any
+static host — e.g. wherever `/beer` is served from.
 
 `node scripts/shoot.mjs <outdir>` screenshots every view against
 `vite preview` via Playwright — handy as a smoke test.
