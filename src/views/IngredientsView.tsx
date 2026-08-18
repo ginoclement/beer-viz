@@ -8,6 +8,7 @@ import {
   hopGramsPerLiter,
   gristShare,
   maltClassColor,
+  canonicalMaltKey,
   type CorpusRecipe,
 } from '../lib/ingredients'
 import { HOPS } from '../lib/hops'
@@ -163,13 +164,48 @@ function HopLeaderboard({
 
 // ------------------------------------------------------------- grist by family
 
+interface MaltRow {
+  name: string
+  avgPct: number
+  count: number
+}
+
+/** The actual malts composing one class within one family's recipes. */
+function maltBreakdown(recipes: CorpusRecipe[], cls: string): MaltRow[] {
+  const agg = new Map<string, { names: Map<string, number>; totalPct: number; count: number }>()
+  for (const r of recipes) {
+    const seenInRecipe = new Set<string>()
+    for (const m of r.malts) {
+      if (m.class !== cls) continue
+      const key = canonicalMaltKey(m.name)
+      const e = agg.get(key) ?? { names: new Map(), totalPct: 0, count: 0 }
+      e.totalPct += m.pct
+      e.names.set(m.name, (e.names.get(m.name) ?? 0) + 1)
+      if (!seenInRecipe.has(key)) {
+        e.count++
+        seenInRecipe.add(key)
+      }
+      agg.set(key, e)
+    }
+  }
+  return [...agg.values()]
+    .map((e) => ({
+      name: [...e.names.entries()].sort((a, b) => b[1] - a[1])[0][0],
+      avgPct: e.totalPct / recipes.length,
+      count: e.count,
+    }))
+    .sort((a, b) => b.avgPct - a.avgPct)
+}
+
 function GristByFamily({ recipes }: { recipes: CorpusRecipe[] }) {
-  const rows = useMemo(() => {
+  const [drill, setDrill] = useState<{ fam: string; cls: string } | null>(null)
+
+  const { rows, byFam } = useMemo(() => {
     const byFam = new Map<string, CorpusRecipe[]>()
     for (const r of CORPUS) {
       byFam.set(r.family, [...(byFam.get(r.family) ?? []), r])
     }
-    return [...byFam.entries()]
+    const rows = [...byFam.entries()]
       .filter(([, rs]) => rs.length >= 5)
       .map(([fam, rs]) => {
         const avg: Record<string, number> = {}
@@ -179,9 +215,18 @@ function GristByFamily({ recipes }: { recipes: CorpusRecipe[] }) {
         return { fam, n: rs.length, avg, dark: avg['roasted'] + avg['crystal & caramel'] }
       })
       .sort((a, b) => a.dark - b.dark)
+    return { rows, byFam }
   }, [])
 
   void recipes // family chart always shows the whole corpus for comparison
+
+  const drillRecipes = drill ? byFam.get(drill.fam) ?? [] : []
+  const drillRows = useMemo(
+    () => (drill ? maltBreakdown(drillRecipes, drill.cls) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [drill],
+  )
+  const drillMax = Math.max(...drillRows.map((r) => r.avgPct), 1)
 
   return (
     <div className="chart-card">
@@ -207,10 +252,19 @@ function GristByFamily({ recipes }: { recipes: CorpusRecipe[] }) {
               5 recipes to appear.
             </li>
           </ul>
+          <h3>Drill down</h3>
+          <p>
+            <strong>Click any segment</strong> to see the actual malts behind it — e.g.
+            click a stout's base segment to learn its backbone is Extra Pale plus Munich
+            and Brown malt, not just "base".
+          </p>
         </ChartHelp>
       </div>
       <h2>What the grist looks like, family by family</h2>
-      <p className="sub">Average grain-bill share by malt class. Hover a segment for the exact share.</p>
+      <p className="sub">
+        Average grain-bill share by malt class. Hover a segment for the exact share —{' '}
+        <strong>click it</strong> to see which malts it's made of.
+      </p>
       <div style={{ display: 'flex', gap: 14, marginBottom: 10, flexWrap: 'wrap' }}>
         {MALT_CLASS_ORDER.map((cls) => (
           <span key={cls} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--ink-2)', fontSize: 12 }}>
@@ -228,17 +282,83 @@ function GristByFamily({ recipes }: { recipes: CorpusRecipe[] }) {
             {MALT_CLASS_ORDER.map((cls) => {
               const v = row.avg[cls]
               if (v < 0.5) return null
+              const active = drill?.fam === row.fam && drill?.cls === cls
               return (
                 <div
                   key={cls}
-                  style={{ width: `${v}%`, background: maltClassColor(cls), minWidth: 2 }}
-                  title={`${cls}: ${v.toFixed(1)}% of grist`}
+                  style={{
+                    width: `${v}%`,
+                    background: maltClassColor(cls),
+                    minWidth: 3,
+                    cursor: 'pointer',
+                    outline: active ? '2px solid #ffffff' : 'none',
+                    outlineOffset: -2,
+                  }}
+                  title={`${cls}: ${v.toFixed(1)}% of grist — click for the malts behind it`}
+                  onClick={() => setDrill(active ? null : { fam: row.fam, cls })}
                 />
               )
             })}
           </div>
         </div>
       ))}
+      {drill && (
+        <div
+          style={{
+            marginTop: 14,
+            padding: '12px 14px',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span className="srmdot" style={{ background: maltClassColor(drill.cls), border: 'none' }} />
+            <strong style={{ fontSize: 13.5 }}>
+              {drill.cls} malts in {drill.fam}
+            </strong>
+            <span style={{ color: 'var(--muted)', fontSize: 12 }}>
+              across {drillRecipes.length} recipes
+            </span>
+            <button className="closex" style={{ float: 'none', marginLeft: 'auto' }} onClick={() => setDrill(null)} aria-label="Close breakdown">
+              ×
+            </button>
+          </div>
+          {drillRows.slice(0, 14).map((m) => (
+            <div key={m.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 0' }}>
+              <span style={{ width: 210, fontSize: 12.5, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {m.name}
+              </span>
+              <div style={{ flex: 1, height: 9 }}>
+                <div
+                  style={{
+                    width: `${(m.avgPct / drillMax) * 100}%`,
+                    minWidth: 2,
+                    height: '100%',
+                    background: maltClassColor(drill.cls),
+                    borderRadius: 4,
+                  }}
+                />
+              </div>
+              <span style={{ width: 110, textAlign: 'right', fontSize: 12, color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
+                {m.avgPct.toFixed(1)}% of grist
+              </span>
+              <span style={{ width: 90, textAlign: 'right', fontSize: 12, color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
+                {m.count} recipes
+              </span>
+            </div>
+          ))}
+          {drillRows.length > 14 && (
+            <div style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 4 }}>
+              + {drillRows.length - 14} more, each under {drillRows[14].avgPct.toFixed(1)}% of the grist
+            </div>
+          )}
+          <p style={{ color: 'var(--muted)', fontSize: 11.5, margin: '6px 0 0' }}>
+            Share = average of this malt's grist percentage across all {drillRecipes.length}{' '}
+            {drill.fam} recipes (zero when absent); "recipes" counts how many actually use it.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

@@ -5,6 +5,8 @@ import {
   forceManyBody,
   forceCenter,
   forceCollide,
+  forceX,
+  forceY,
   type Simulation,
   type ForceLink,
   type SimulationNodeDatum,
@@ -22,9 +24,10 @@ import {
   type Range,
 } from '../lib/hops'
 import { fitPca, pcaTransformAll } from '../lib/pca'
-import { attachPanZoom, identityView } from '../lib/panZoom'
+import { attachPanZoom, identityView, fitViewToPoints } from '../lib/panZoom'
 import { useCardExpand } from '../components/CardExpand'
 import ChartHelp from '../components/ChartHelp'
+import HopAromaSpace from '../components/HopAromaSpace'
 
 const PURPOSE_COLORS: Record<string, string> = {
   Aroma: '#3987e5',
@@ -543,6 +546,7 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
   // without rebuilding the force layout.
   const selectedRef = useRef(selectedKey)
   const viewRef = useRef(identityView())
+  const interactedRef = useRef(false)
   const draggedRef = useRef<() => boolean>(() => false)
   const { expanded, cardClass, button } = useCardExpand()
   const expandedRef = useRef(expanded)
@@ -611,6 +615,9 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
       )
       .force('charge', forceManyBody().strength(-26))
       .force('center', forceCenter(0, 0))
+      // weak pull toward the middle keeps loose components from flying away
+      .force('x', forceX(0).strength(0.045))
+      .force('y', forceY(0).strength(0.045))
       .force('collide', forceCollide(8))
 
     const ctx = canvas.getContext('2d')!
@@ -659,14 +666,28 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
       }
     }
     graphRef.current = { sim, links: [], draw }
-    sim.on('tick', draw)
+    // keep the whole layout in frame while it settles; stop the moment the
+    // user zooms or pans, and let double-click hand control back to auto-fit
+    const fit = () => fitViewToPoints(viewRef.current, nodes, width, height)
+    sim.on('tick', () => {
+      if (!interactedRef.current) fit()
+      draw()
+    })
     const pz = attachPanZoom(canvas, {
       view: viewRef.current,
       toCenter: (e) => {
         const rect = canvas.getBoundingClientRect()
         return [e.clientX - rect.left - width / 2, e.clientY - rect.top - height / 2]
       },
-      onChange: draw,
+      onChange: () => {
+        interactedRef.current = true
+        draw()
+      },
+      onReset: () => {
+        interactedRef.current = false
+        fit()
+        draw()
+      },
     })
     draggedRef.current = pz.dragged
     const ro = new ResizeObserver(() => {
@@ -786,7 +807,7 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
   )
 }
 
-export type HopsPage = 'pairing' | 'aroma' | 'network'
+export type HopsPage = 'pairing' | 'aroma' | 'space' | 'network'
 
 export default function HopsView({ page = 'pairing' }: { page?: HopsPage }) {
   const { setSelectedId, hopKey, setHopKey } = useAnalysis()
@@ -814,6 +835,7 @@ export default function HopsView({ page = 'pairing' }: { page?: HopsPage }) {
         <div className="charts">
           {page === 'pairing' && <PairingCard onPickHop={setHopKey} />}
           {page === 'aroma' && <AromaScatter selectedKey={hop.key} onPickHop={setHopKey} />}
+          {page === 'space' && <HopAromaSpace selectedKey={hop.key} onPickHop={setHopKey} />}
           {page === 'network' && <HopNetwork selectedKey={hop.key} onPickHop={setHopKey} />}
         </div>
       </div>

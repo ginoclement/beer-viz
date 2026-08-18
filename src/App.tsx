@@ -39,6 +39,7 @@ const NAV = [
     pages: [
       { id: 'hops-pairing', label: 'Style Pairing' },
       { id: 'hops-aroma', label: 'Aroma Map' },
+      { id: 'hops-space', label: '3D Aroma Space' },
       { id: 'hops-network', label: 'Kinship Network' },
     ],
   },
@@ -178,6 +179,7 @@ function Shell() {
 
       {page === 'hops-pairing' && <HopsView page="pairing" />}
       {page === 'hops-aroma' && <HopsView page="aroma" />}
+      {page === 'hops-space' && <HopsView page="space" />}
       {page === 'hops-network' && <HopsView page="network" />}
 
       {page === 'ing-usage' && <IngredientsView page="usage" goToHops={() => goToPage('hops-pairing')} />}

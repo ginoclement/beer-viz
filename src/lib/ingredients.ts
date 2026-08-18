@@ -93,6 +93,23 @@ export function classifyMalt(name: string): string {
   return 'other'
 }
 
+/**
+ * Merge spelling variants of the same malt ("Wheat" / "Wheat Malt",
+ * "Carafa Special Malt Type 1" / "Carafa Special Type 1") onto one key so
+ * grist drill-downs aggregate correctly.
+ */
+export function canonicalMaltKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/weyernmann|weyermann|simpsons|thomas fawcett|crisp\b/g, '')
+    .replace(/\bmalt\b/g, '')
+    .replace(/\btype\s*(\d)/g, '$1')
+    .replace(/\boats?\b/g, 'oat')
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 /** Total hop grams per liter for a recipe, or null without batch volume. */
 export function hopGramsPerLiter(r: CorpusRecipe): number | null {
   if (!r.batchL) return null

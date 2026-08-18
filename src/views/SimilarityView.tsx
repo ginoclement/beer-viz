@@ -5,6 +5,8 @@ import {
   forceManyBody,
   forceCenter,
   forceCollide,
+  forceX,
+  forceY,
   type Simulation,
   type ForceLink,
   type SimulationNodeDatum,
@@ -14,7 +16,7 @@ import { useAnalysis } from '../state/useAnalysis'
 import { combinedSimilarityMatrix, jaccard, neighborsOf } from '../lib/similarity'
 import { descriptorSimilarity } from '../lib/descriptors'
 import { clusterColor } from '../lib/palette'
-import { attachPanZoom, identityView } from '../lib/panZoom'
+import { attachPanZoom, identityView, fitViewToPoints } from '../lib/panZoom'
 import StyleDetail from '../components/StyleDetail'
 import ChartHelp from '../components/ChartHelp'
 
@@ -43,6 +45,7 @@ function NetworkGraph({
   const selectedRef = useRef(selectedId)
   const clustersRef = useRef(clusterOf)
   const viewRef = useRef(identityView())
+  const interactedRef = useRef(false)
   const draggedRef = useRef<() => boolean>(() => false)
 
   const matrix = useMemo(
@@ -92,6 +95,9 @@ function NetworkGraph({
       )
       .force('charge', forceManyBody().strength(-42))
       .force('center', forceCenter(0, 0))
+      // weak pull toward the middle keeps loose components from flying away
+      .force('x', forceX(0).strength(0.045))
+      .force('y', forceY(0).strength(0.045))
       .force('collide', forceCollide(9))
 
     const ctx = canvas.getContext('2d')!
@@ -140,7 +146,13 @@ function NetworkGraph({
     }
     graphRef.current = { sim, links: [], draw }
 
-    sim.on('tick', draw)
+    // keep the whole layout in frame while it settles; stop the moment the
+    // user zooms or pans, and let double-click hand control back to auto-fit
+    const fit = () => fitViewToPoints(viewRef.current, nodes, width, height)
+    sim.on('tick', () => {
+      if (!interactedRef.current) fit()
+      draw()
+    })
 
     const pz = attachPanZoom(canvas, {
       view: viewRef.current,
@@ -148,7 +160,15 @@ function NetworkGraph({
         const rect = canvas.getBoundingClientRect()
         return [e.clientX - rect.left - width / 2, e.clientY - rect.top - height / 2]
       },
-      onChange: draw,
+      onChange: () => {
+        interactedRef.current = true
+        draw()
+      },
+      onReset: () => {
+        interactedRef.current = false
+        fit()
+        draw()
+      },
     })
     draggedRef.current = pz.dragged
 
