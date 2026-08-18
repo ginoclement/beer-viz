@@ -6,6 +6,7 @@ import { SERIES } from '../lib/palette'
 import { midVitals } from '../lib/features'
 import { attachPanZoom, identityView } from '../lib/panZoom'
 import StyleDetail from '../components/StyleDetail'
+import SidePanel from '../components/SidePanel'
 import ChartHelp from '../components/ChartHelp'
 import type { BeerStyle } from '../lib/types'
 
@@ -312,7 +313,7 @@ export default function TaxonomyView({ goToSpace }: { goToSpace?: () => void }) 
 
   return (
     <div className="view">
-      <div className="main-panel">
+      <div className="main-panel immersive">
         <div className="controls-bar">
           <label className="ctl">
             <input
@@ -385,7 +386,7 @@ export default function TaxonomyView({ goToSpace }: { goToSpace?: () => void }) 
           )}
         </div>
       </div>
-      <aside className="sidebar">
+      <SidePanel>
         {selected ? (
           <StyleDetail style={selected} onClose={() => setSelectedId(null)} onViewIn3d={goToSpace} />
         ) : (
@@ -402,7 +403,7 @@ export default function TaxonomyView({ goToSpace }: { goToSpace?: () => void }) 
             </p>
           </div>
         )}
-      </aside>
+      </SidePanel>
     </div>
   )
 }

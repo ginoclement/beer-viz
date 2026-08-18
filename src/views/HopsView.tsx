@@ -25,8 +25,9 @@ import {
 } from '../lib/hops'
 import { fitPca, pcaTransformAll } from '../lib/pca'
 import { attachPanZoom, identityView, fitViewToPoints } from '../lib/panZoom'
-import { useCardExpand } from '../components/CardExpand'
+import { useSvgPanZoom } from '../components/useSvgPanZoom'
 import ChartHelp from '../components/ChartHelp'
+import SidePanel from '../components/SidePanel'
 import HopAromaSpace from '../components/HopAromaSpace'
 
 const PURPOSE_COLORS: Record<string, string> = {
@@ -355,12 +356,8 @@ function PairingCard({ onPickHop }: { onPickHop: (k: string) => void }) {
 
 function AromaScatter({ selectedKey, onPickHop }: { selectedKey: string | null; onPickHop: (k: string) => void }) {
   const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null)
-  const { cardClass, button } = useCardExpand()
   const wrapRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
-  const draggedRef = useRef<() => boolean>(() => false)
-  // zoom state drives the viewBox; marks/labels are sized in screen pixels
-  const [zoom, setZoom] = useState(identityView())
 
   const pts = useMemo(() => {
     const withVec = HOPS.map((h) => ({ h, v: hopAromaVector(h) })).filter(
@@ -371,9 +368,9 @@ function AromaScatter({ selectedKey, onPickHop }: { selectedKey: string | null; 
     return withVec.map((x, i) => ({ ...x, p: proj[i] }))
   }, [])
 
-  const W = 860
-  const H = 520
-  const pad = 30
+  const W = 1200
+  const H = 800
+  const pad = 60
   const xs = pts.map((d) => d.p[0])
   const ys = pts.map((d) => d.p[1])
   const [minX, maxX] = [Math.min(...xs), Math.max(...xs)]
@@ -382,41 +379,80 @@ function AromaScatter({ selectedKey, onPickHop }: { selectedKey: string | null; 
   const y = (v: number) => H - pad - ((v - minY) / (maxY - minY || 1)) * (H - 2 * pad)
   const h = hover ? pts[hover.i] : null
 
-  useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
-    const view = identityView()
-    const pz = attachPanZoom(svg as unknown as HTMLElement, {
-      view,
-      // work in svg user units so CSS scaling of the element doesn't matter
-      toCenter: (e) => {
-        const rect = svg.getBoundingClientRect()
-        return [
-          ((e.clientX - rect.left - rect.width / 2) * W) / rect.width,
-          ((e.clientY - rect.top - rect.height / 2) * H) / rect.height,
-        ]
-      },
-      onChange: () => setZoom({ ...view }),
-      maxK: 8,
-    })
-    draggedRef.current = pz.dragged
-    return pz.cleanup
-  }, [])
-
-  const k = zoom.k
-  const vb = {
-    x: W / 2 - zoom.tx / k - W / (2 * k),
-    y: H / 2 - zoom.ty / k - H / (2 * k),
-    w: W / k,
-    h: H / k,
-  }
+  const { vb, k, dragged } = useSvgPanZoom(svgRef, W, H, { minK: 1, maxK: 8 })
   const setTip = (i: number, e: React.MouseEvent) => {
     const rect = wrapRef.current!.getBoundingClientRect()
     setHover({ i, x: e.clientX - rect.left, y: e.clientY - rect.top })
   }
 
   return (
-    <div className={`chart-card${cardClass}`}>
+    <div className="stage" ref={wrapRef}>
+      <svg
+        ref={svgRef}
+        viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label="PCA map of hop aroma profiles"
+      >
+        {pts.map((d, i) => {
+          const sel = d.h.key === selectedKey
+          const r = (sel ? 9 : hover?.i === i ? 8 : 6) / k
+          return (
+            <circle
+              key={d.h.key}
+              cx={x(d.p[0])}
+              cy={y(d.p[1])}
+              r={r}
+              fill={purposeColor(d.h.purpose)}
+              stroke={sel ? '#ffffff' : 'var(--page)'}
+              strokeWidth={(sel ? 2 : 1.5) / k}
+              style={{ cursor: 'pointer' }}
+              onMouseEnter={(e) => setTip(i, e)}
+              onMouseMove={(e) => setTip(i, e)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => {
+                if (!dragged()) onPickHop(d.h.key)
+              }}
+            />
+          )
+        })}
+        {(k >= 1.8 || selectedKey) &&
+          pts.map((d) => {
+            const sel = d.h.key === selectedKey
+            if (k < 1.8 && !sel) return null
+            return (
+              <text
+                key={`l-${d.h.key}`}
+                x={x(d.p[0]) + 10 / k}
+                y={y(d.p[1]) + 3.5 / k}
+                fontSize={12.5 / k}
+                fontWeight={sel ? 700 : 600}
+                fill={sel ? '#ffffff' : '#d6d4cb'}
+                stroke="#0d0d0d"
+                strokeWidth={2.5 / k}
+                paintOrder="stroke"
+                style={{ pointerEvents: 'none' }}
+              >
+                {d.h.name}
+              </text>
+            )
+          })}
+      </svg>
+      <div className="stage-title">
+        <h2>The hop aroma map</h2>
+        <div style={{ display: 'flex', gap: 14, margin: '4px 0 2px', flexWrap: 'wrap' }}>
+          {Object.entries(PURPOSE_COLORS).map(([p, c]) => (
+            <span key={p} style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--ink-2)', fontSize: 11.5 }}>
+              <span className="srmdot" style={{ background: c, border: 'none', width: 9, height: 9 }} />
+              {p}
+            </span>
+          ))}
+        </div>
+        <p className="sub">
+          PCA of each variety's 9-axis sensory profile. Click a dot to inspect · scroll to
+          zoom (names appear) · drag to pan · double-click to reset.
+        </p>
+      </div>
       <div className="cardtools">
         <ChartHelp title="Reading the hop aroma map">
           <p>
@@ -443,87 +479,16 @@ function AromaScatter({ selectedKey, onPickHop }: { selectedKey: string | null; 
             drag to pan, double-click to reset.
           </p>
         </ChartHelp>
-        {button}
       </div>
-      <h2>The hop aroma map</h2>
-      <p className="sub">
-        PCA of each variety's 9-axis sensory profile (producer spider charts). Neighboring
-        hops smell alike; color is brewing purpose. Click to inspect · scroll to zoom
-        (names appear) · drag to pan · double-click to reset.
-      </p>
-      <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
-        {Object.entries(PURPOSE_COLORS).map(([p, c]) => (
-          <span key={p} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--ink-2)', fontSize: 12.5 }}>
-            <span className="srmdot" style={{ background: c, border: 'none' }} />
-            {p}
-          </span>
-        ))}
-      </div>
-      <div ref={wrapRef} style={{ position: 'relative' }}>
-        <svg
-          ref={svgRef}
-          viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
-          width={W}
-          height={H}
-          style={{ width: '100%', height: 'auto', display: 'block', touchAction: 'none' }}
-          role="img"
-          aria-label="PCA map of hop aroma profiles"
-        >
-          <rect x={0} y={0} width={W} height={H} fill="var(--page)" rx={8} />
-          {pts.map((d, i) => {
-            const sel = d.h.key === selectedKey
-            const r = (sel ? 8 : hover?.i === i ? 7 : 5) / k
-            return (
-              <circle
-                key={d.h.key}
-                cx={x(d.p[0])}
-                cy={y(d.p[1])}
-                r={r}
-                fill={purposeColor(d.h.purpose)}
-                stroke={sel ? '#ffffff' : 'var(--page)'}
-                strokeWidth={(sel ? 2 : 1.5) / k}
-                style={{ cursor: 'pointer' }}
-                onMouseEnter={(e) => setTip(i, e)}
-                onMouseMove={(e) => setTip(i, e)}
-                onMouseLeave={() => setHover(null)}
-                onClick={() => {
-                  if (!draggedRef.current()) onPickHop(d.h.key)
-                }}
-              />
-            )
-          })}
-          {(k >= 2.2 || selectedKey) &&
-            pts.map((d) => {
-              const sel = d.h.key === selectedKey
-              if (k < 2.2 && !sel) return null
-              return (
-                <text
-                  key={`l-${d.h.key}`}
-                  x={x(d.p[0]) + 9 / k}
-                  y={y(d.p[1]) + 3.5 / k}
-                  fontSize={11.5 / k}
-                  fontWeight={sel ? 700 : 600}
-                  fill={sel ? '#ffffff' : '#d6d4cb'}
-                  stroke="#0d0d0d"
-                  strokeWidth={2.5 / k}
-                  paintOrder="stroke"
-                  style={{ pointerEvents: 'none' }}
-                >
-                  {d.h.name}
-                </text>
-              )
-            })}
-        </svg>
-        {h && hover && (
-          <div className="tooltip3d" style={{ left: hover.x, top: hover.y }}>
-            <div className="t-name">{h.h.name}</div>
-            <div className="t-sub">
-              {h.h.country ?? ''} · {h.h.purpose}
-            </div>
-            <div className="t-stats">{h.h.notes.slice(0, 4).join(', ')}</div>
+      {h && hover && (
+        <div className="tooltip3d" style={{ left: hover.x, top: hover.y }}>
+          <div className="t-name">{h.h.name}</div>
+          <div className="t-sub">
+            {h.h.country ?? ''} · {h.h.purpose}
           </div>
-        )}
-      </div>
+          <div className="t-stats">{h.h.notes.slice(0, 4).join(', ')}</div>
+        </div>
+      )}
     </div>
   )
 }
@@ -548,9 +513,6 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
   const viewRef = useRef(identityView())
   const interactedRef = useRef(false)
   const draggedRef = useRef<() => boolean>(() => false)
-  const { expanded, cardClass, button } = useCardExpand()
-  const expandedRef = useRef(expanded)
-  expandedRef.current = expanded
 
   const hops = useMemo(() => HOPS.filter((h) => h.aromas), [])
 
@@ -594,11 +556,11 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
     nodesRef.current = nodes
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
     let width = wrap.clientWidth
-    let height = 560
+    let height = wrap.clientHeight || 560
     const sizeCanvas = () => {
       width = wrap.clientWidth
-      // fullscreen card: let the graph take the viewport height
-      height = expandedRef.current ? Math.max(480, window.innerHeight - 250) : 560
+      // fill the whole stage
+      height = wrap.clientHeight || 560
       canvas.width = width * dpr
       canvas.height = height * dpr
       canvas.style.width = `${width}px`
@@ -737,7 +699,35 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
   }
 
   return (
-    <div className={`chart-card${cardClass}`}>
+    <div className="stage" ref={wrapRef}>
+      <canvas
+        ref={canvasRef}
+        onMouseMove={(e) => {
+          const i = nodeAt(e)
+          const rect = canvasRef.current!.getBoundingClientRect()
+          setHover(i >= 0 ? { i, x: e.clientX - rect.left, y: e.clientY - rect.top } : null)
+        }}
+        onMouseLeave={() => setHover(null)}
+        onClick={(e) => {
+          if (draggedRef.current()) return
+          const i = nodeAt(e)
+          if (i >= 0) onPickHop(hops[i].key)
+        }}
+        style={{ cursor: hover ? 'pointer' : 'default', display: 'block' }}
+      />
+      <div className="stage-title">
+        <h2>Substitution &amp; kinship network</h2>
+        <p className="sub" style={{ marginBottom: 6 }}>
+          <span style={{ color: 'var(--accent-bright)' }}>Gold edges</span> are producer-listed
+          substitutes; gray edges join hops with near-identical aroma. Click a node to inspect ·
+          scroll to zoom · drag to pan · double-click to reset.
+        </p>
+        <label className="ctl" style={{ fontSize: 12 }}>
+          Aroma-similarity threshold
+          <input type="range" min={0.88} max={0.98} step={0.005} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} />
+          <span className="val">{threshold.toFixed(3)}</span>
+        </label>
+      </div>
       <div className="cardtools">
         <ChartHelp title="Reading the kinship network">
           <p>Each node is a hop variety, colored by brewing purpose. Two kinds of edge:</p>
@@ -764,45 +754,15 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
             double-click to reset. Lower the threshold to admit looser aroma kinships.
           </p>
         </ChartHelp>
-        {button}
       </div>
-      <h2>Substitution &amp; kinship network</h2>
-      <p className="sub">
-        <span style={{ color: 'var(--accent-bright)' }}>Gold edges</span> are
-        producer-listed "brews well with / substitute" relationships (Hopsteiner);
-        gray edges join hops whose measured aroma profiles are nearly identical.
-        Scroll to zoom (names appear), drag to pan, double-click to reset.
-      </p>
-      <label className="ctl" style={{ marginBottom: 8 }}>
-        Aroma-similarity threshold
-        <input type="range" min={0.88} max={0.98} step={0.005} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} />
-        <span className="val">{threshold.toFixed(3)}</span>
-      </label>
-      <div ref={wrapRef} style={{ position: 'relative' }}>
-        <canvas
-          ref={canvasRef}
-          onMouseMove={(e) => {
-            const i = nodeAt(e)
-            const rect = canvasRef.current!.getBoundingClientRect()
-            setHover(i >= 0 ? { i, x: e.clientX - rect.left, y: e.clientY - rect.top } : null)
-          }}
-          onMouseLeave={() => setHover(null)}
-          onClick={(e) => {
-            if (draggedRef.current()) return
-            const i = nodeAt(e)
-            if (i >= 0) onPickHop(hops[i].key)
-          }}
-          style={{ cursor: hover ? 'pointer' : 'default' }}
-        />
-        {hover && (
-          <div className="tooltip3d" style={{ left: hover.x, top: hover.y }}>
-            <div className="t-name">{hops[hover.i].name}</div>
-            <div className="t-sub">
-              {hops[hover.i].country ?? ''} · {hops[hover.i].purpose}
-            </div>
+      {hover && (
+        <div className="tooltip3d" style={{ left: hover.x, top: hover.y }}>
+          <div className="t-name">{hops[hover.i].name}</div>
+          <div className="t-sub">
+            {hops[hover.i].country ?? ''} · {hops[hover.i].purpose}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -812,10 +772,12 @@ export type HopsPage = 'pairing' | 'aroma' | 'space' | 'network'
 export default function HopsView({ page = 'pairing' }: { page?: HopsPage }) {
   const { setSelectedId, hopKey, setHopKey } = useAnalysis()
   const hop = HOPS.find((h) => h.key === hopKey) ?? HOPS[0]
+  // graph pages fill the viewport; the pairing table scrolls in a card
+  const immersive = page !== 'pairing'
 
   return (
     <div className="view">
-      <div className="main-panel">
+      <div className={`main-panel${immersive ? ' immersive' : ''}`}>
         <div className="controls-bar">
           <label className="ctl">
             Hop
@@ -827,21 +789,25 @@ export default function HopsView({ page = 'pairing' }: { page?: HopsPage }) {
               ))}
             </select>
           </label>
-          <span style={{ color: 'var(--muted)' }}>
-            {HOPS.length} varieties · chemistry from Yakima Chief, Barth-Haas, Hopsteiner
-            &amp; Crosby published data
-          </span>
+          {!immersive && (
+            <span style={{ color: 'var(--muted)' }}>
+              {HOPS.length} varieties · chemistry from Yakima Chief, Barth-Haas, Hopsteiner
+              &amp; Crosby published data
+            </span>
+          )}
         </div>
-        <div className="charts">
-          {page === 'pairing' && <PairingCard onPickHop={setHopKey} />}
-          {page === 'aroma' && <AromaScatter selectedKey={hop.key} onPickHop={setHopKey} />}
-          {page === 'space' && <HopAromaSpace selectedKey={hop.key} onPickHop={setHopKey} />}
-          {page === 'network' && <HopNetwork selectedKey={hop.key} onPickHop={setHopKey} />}
-        </div>
+        {page === 'pairing' && (
+          <div className="charts">
+            <PairingCard onPickHop={setHopKey} />
+          </div>
+        )}
+        {page === 'aroma' && <AromaScatter selectedKey={hop.key} onPickHop={setHopKey} />}
+        {page === 'space' && <HopAromaSpace selectedKey={hop.key} onPickHop={setHopKey} />}
+        {page === 'network' && <HopNetwork selectedKey={hop.key} onPickHop={setHopKey} />}
       </div>
-      <aside className="sidebar">
+      <SidePanel>
         <HopDetail hop={hop} onPickHop={setHopKey} onPickStyle={setSelectedId} />
-      </aside>
+      </SidePanel>
     </div>
   )
 }

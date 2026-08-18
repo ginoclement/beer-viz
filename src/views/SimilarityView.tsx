@@ -18,6 +18,7 @@ import { descriptorSimilarity } from '../lib/descriptors'
 import { clusterColor } from '../lib/palette'
 import { attachPanZoom, identityView, fitViewToPoints } from '../lib/panZoom'
 import StyleDetail from '../components/StyleDetail'
+import SidePanel from '../components/SidePanel'
 import ChartHelp from '../components/ChartHelp'
 
 interface Node extends SimulationNodeDatum {
@@ -481,9 +482,9 @@ export default function SimilarityView({ goToSpace }: { goToSpace?: () => void }
           <NetworkGraph threshold={threshold} onPick={setSelectedId} />
         </div>
       </div>
-      <aside className="sidebar">
+      <SidePanel>
         <StyleDetail style={focus} sharedTags={sharedWith} onViewIn3d={goToSpace} />
-      </aside>
+      </SidePanel>
     </div>
   )
 }

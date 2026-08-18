@@ -15,6 +15,7 @@ import { HOPS } from '../lib/hops'
 import { srmToHex } from '../lib/srm'
 import { GristBar, HopScheduleList } from '../components/IngredientBill'
 import ChartHelp from '../components/ChartHelp'
+import SidePanel from '../components/SidePanel'
 import { useCardExpand } from '../components/CardExpand'
 
 const fmtG = (g: number) => (g >= 1000 ? `${(g / 1000).toFixed(1)} kg` : `${Math.round(g)} g`)
@@ -636,7 +637,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
           {page === 'grist' && <GristByFamily recipes={recipes} />}
         </div>
       </div>
-      <aside className="sidebar">
+      <SidePanel>
         {selected ? (
           <CorpusRecipeDetail
             recipe={selected}
@@ -665,7 +666,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
             <p style={{ fontSize: 12, color: 'var(--muted)' }}>{CORPUS_SOURCE}. Recipes © BrewDog, published for homebrewers.</p>
           </div>
         )}
-      </aside>
+      </SidePanel>
     </div>
   )
 }

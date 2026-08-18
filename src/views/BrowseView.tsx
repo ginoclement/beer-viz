@@ -3,6 +3,7 @@ import { useAnalysis } from '../state/useAnalysis'
 import { srmToHex } from '../lib/srm'
 import type { BeerStyle } from '../lib/types'
 import StyleDetail from '../components/StyleDetail'
+import SidePanel from '../components/SidePanel'
 
 type SortKey = 'id' | 'name' | 'category' | 'abv' | 'ibu' | 'srm' | 'og'
 
@@ -173,7 +174,7 @@ export default function BrowseView({ goToSpace }: { goToSpace?: () => void }) {
           </div>
         </div>
       </div>
-      <aside className="sidebar">
+      <SidePanel>
         {selected ? (
           <StyleDetail style={selected} onClose={() => setSelectedId(null)} onViewIn3d={goToSpace} />
         ) : (
@@ -187,7 +188,7 @@ export default function BrowseView({ goToSpace }: { goToSpace?: () => void }) {
             </p>
           </div>
         )}
-      </aside>
+      </SidePanel>
     </div>
   )
 }

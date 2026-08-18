@@ -177,7 +177,32 @@ export default function HopAromaSpace({
   const h = hover ? pts[hover.index] : null
 
   return (
-    <div className="chart-card" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div className="stage">
+      <Canvas dpr={[1, 2]} camera={{ fov: 42, near: 0.01, far: 60 }} style={{ width: '100%', height: '100%' }}>
+        <color attach="background" args={['#0d0d0d']} />
+        <ambientLight intensity={0.85} />
+        <directionalLight position={[4, 6, 3]} intensity={1.1} />
+        <directionalLight position={[-4, -2, -3]} intensity={0.35} />
+        <CameraRig />
+        <SubstituteEdges pts={pts} />
+        <HopPoints pts={pts} selectedKey={selectedKey} onHover={setHover} onPick={onPickHop} />
+        <OrbitControls enableDamping dampingFactor={0.12} minDistance={0.2} maxDistance={15} makeDefault />
+      </Canvas>
+      <div className="stage-title">
+        <h2>The hop aroma space, in 3D</h2>
+        <div style={{ display: 'flex', gap: 14, margin: '4px 0 2px', flexWrap: 'wrap' }}>
+          {Object.entries(PURPOSE_COLORS).map(([p, c]) => (
+            <span key={p} style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--ink-2)', fontSize: 11.5 }}>
+              <span className="srmdot" style={{ background: c, border: 'none', width: 9, height: 9 }} />
+              {p}
+            </span>
+          ))}
+        </div>
+        <p className="sub">
+          3-component PCA ({Math.round(variance * 100)}% of variance). Gold edges are
+          producer-listed substitutes. Drag to orbit · scroll to zoom · click to inspect.
+        </p>
+      </div>
       <div className="cardtools">
         <ChartHelp title="Reading the 3D aroma space">
           <p>
@@ -203,41 +228,15 @@ export default function HopAromaSpace({
           </p>
         </ChartHelp>
       </div>
-      <h2>The hop aroma space, in 3D</h2>
-      <p className="sub">
-        3-component PCA of each variety's 9-axis sensory profile ({Math.round(variance * 100)}%
-        of variance). Gold edges are producer-listed substitutes. Drag to orbit · scroll to
-        zoom · click to inspect.
-      </p>
-      <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
-        {Object.entries(PURPOSE_COLORS).map(([p, c]) => (
-          <span key={p} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--ink-2)', fontSize: 12.5 }}>
-            <span className="srmdot" style={{ background: c, border: 'none' }} />
-            {p}
-          </span>
-        ))}
-      </div>
-      <div style={{ position: 'relative', flex: 1, minHeight: 520, borderRadius: 8, overflow: 'hidden' }}>
-        <Canvas dpr={[1, 2]} camera={{ fov: 42, near: 0.01, far: 60 }}>
-          <color attach="background" args={['#0d0d0d']} />
-          <ambientLight intensity={0.85} />
-          <directionalLight position={[4, 6, 3]} intensity={1.1} />
-          <directionalLight position={[-4, -2, -3]} intensity={0.35} />
-          <CameraRig />
-          <SubstituteEdges pts={pts} />
-          <HopPoints pts={pts} selectedKey={selectedKey} onHover={setHover} onPick={onPickHop} />
-          <OrbitControls enableDamping dampingFactor={0.12} minDistance={0.2} maxDistance={15} makeDefault />
-        </Canvas>
-        {h && hover && (
-          <div className="tooltip3d" style={{ left: hover.x, top: hover.y }}>
-            <div className="t-name">{h.hop.name}</div>
-            <div className="t-sub">
-              {h.hop.country ?? ''} · {h.hop.purpose}
-            </div>
-            <div className="t-stats">{h.hop.notes.slice(0, 4).join(', ')}</div>
+      {h && hover && (
+        <div className="tooltip3d" style={{ left: hover.x, top: hover.y }}>
+          <div className="t-name">{h.hop.name}</div>
+          <div className="t-sub">
+            {h.hop.country ?? ''} · {h.hop.purpose}
           </div>
-        )}
-      </div>
+          <div className="t-stats">{h.hop.notes.slice(0, 4).join(', ')}</div>
+        </div>
+      )}
     </div>
   )
 }

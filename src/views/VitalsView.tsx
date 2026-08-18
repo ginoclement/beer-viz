@@ -1,17 +1,25 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useAnalysis } from '../state/useAnalysis'
 import { midVitals } from '../lib/features'
 import { srmToHex } from '../lib/srm'
 import type { BeerStyle } from '../lib/types'
 import ChartHelp from '../components/ChartHelp'
 
-const W = 860
-const H = 520
-const PAD = { l: 52, r: 18, t: 12, b: 40 }
+const W = 1200
+const H = 760
+const PAD = { l: 62, r: 26, t: 22, b: 52 }
+
+/** mouse offset within a stage element, for tooltip placement */
+type Tip = { i: number; mx: number; my: number } | null
+const tipAt = (e: React.MouseEvent, i: number, wrap: HTMLElement | null): Tip => {
+  const rect = wrap?.getBoundingClientRect()
+  return rect ? { i, mx: e.clientX - rect.left, my: e.clientY - rect.top } : { i, mx: 0, my: 0 }
+}
 
 function Scatter() {
   const { styles, setSelectedId, selectedId } = useAnalysis()
-  const [hover, setHover] = useState<number | null>(null)
+  const [hover, setHover] = useState<Tip>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
 
   const pts = useMemo(
     () =>
@@ -30,10 +38,18 @@ function Scatter() {
   const xTicks = [0, 2, 4, 6, 8, 10, 12].filter((t) => t <= maxAbv)
   const yTicks = [0, 20, 40, 60, 80, 100].filter((t) => t <= maxIbu)
 
-  const h = hover != null ? pts[hover] : null
+  const h = hover != null ? pts[hover.i] : null
 
   return (
-    <div className="chart-card">
+    <div className="stage" ref={wrapRef}>
+      <div className="stage-title">
+        <h2>Bitterness vs. strength</h2>
+        <p className="sub">
+          Each style at its midpoint ABV and IBU, painted its actual color (SRM). Hover for
+          the style; click to select it — the selected style shows its full published ranges
+          as whiskers.
+        </p>
+      </div>
       <div className="cardtools">
         <ChartHelp title="Reading bitterness vs. strength">
           <p>
@@ -63,14 +79,7 @@ function Scatter() {
           </p>
         </ChartHelp>
       </div>
-      <h2>Bitterness vs. strength</h2>
-      <p className="sub">
-        Each style at its midpoint ABV and IBU, painted its actual color (SRM). Hover for
-        the style; click to open it in the 3D space sidebar. The selected style shows its
-        full published ranges as whiskers.
-      </p>
-      <div className="chart-scroll" style={{ position: 'relative' }}>
-        <svg width={W} height={H} role="img" aria-label="Scatter plot of ABV versus IBU for all styles">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Scatter plot of ABV versus IBU for all styles">
           {yTicks.map((t) => (
             <g key={t}>
               <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} stroke="var(--grid)" />
@@ -124,22 +133,20 @@ function Scatter() {
               key={p.s.id}
               cx={x(p.v.abv)}
               cy={y(p.v.ibu)}
-              r={hover === i || p.s.id === selectedId ? 8 : 5.5}
+              r={hover?.i === i || p.s.id === selectedId ? 8 : 5.5}
               fill={srmToHex(p.v.srm)}
               stroke={p.s.id === selectedId ? '#ffffff' : 'var(--page)'}
               strokeWidth={2}
               style={{ cursor: 'pointer' }}
-              onMouseEnter={() => setHover(i)}
+              onMouseEnter={(e) => setHover(tipAt(e, i, wrapRef.current))}
+              onMouseMove={(e) => setHover(tipAt(e, i, wrapRef.current))}
               onMouseLeave={() => setHover(null)}
               onClick={() => setSelectedId(p.s.id)}
             />
           ))}
         </svg>
-        {h && (
-          <div
-            className="tooltip3d"
-            style={{ left: x(h.v.abv), top: y(h.v.ibu) }}
-          >
+        {h && hover && (
+          <div className="tooltip3d" style={{ left: hover.mx, top: hover.my }}>
             <div className="t-name">
               {h.s.categoryId ? `${h.s.id} ` : ''}
               {h.s.name}
@@ -149,7 +156,6 @@ function Scatter() {
             </div>
           </div>
         )}
-      </div>
     </div>
   )
 }
@@ -264,7 +270,8 @@ function SrmLadder() {
 
 function AttenuationChart() {
   const { styles, setSelectedId, selectedId } = useAnalysis()
-  const [hover, setHover] = useState<number | null>(null)
+  const [hover, setHover] = useState<Tip>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
   const pts = useMemo(
     () =>
       styles.map((s) => {
@@ -280,12 +287,19 @@ function AttenuationChart() {
   const x = (og: number) => PAD.l + ((og - minOg) / (maxOg - minOg)) * (W - PAD.l - PAD.r)
   const y = (at: number) =>
     H - PAD.b - ((Math.min(Math.max(at, minAt), maxAt) - minAt) / (maxAt - minAt)) * (H - PAD.t - PAD.b)
-  const h = hover != null ? pts[hover] : null
+  const h = hover != null ? pts[hover.i] : null
   const xTicks = [1.03, 1.05, 1.07, 1.09, 1.11].filter((t) => t < maxOg)
   const yTicks = [60, 70, 80, 90]
 
   return (
-    <div className="chart-card">
+    <div className="stage" ref={wrapRef}>
+      <div className="stage-title">
+        <h2>Fermentability: OG vs. apparent attenuation</h2>
+        <p className="sub">
+          How big the beer starts vs. how dry it finishes. Sweet, full styles sink to the
+          bottom; crisp, dry styles float to the top.
+        </p>
+      </div>
       <div className="cardtools">
         <ChartHelp title="Reading the fermentability chart">
           <p>
@@ -313,13 +327,7 @@ function AttenuationChart() {
           <p>Hover for the style; click to open it.</p>
         </ChartHelp>
       </div>
-      <h2>Fermentability: original gravity vs. apparent attenuation</h2>
-      <p className="sub">
-        How big the beer starts vs. how dry it finishes. Sweet, full styles sink to the
-        bottom; crisp, dry styles float to the top.
-      </p>
-      <div className="chart-scroll" style={{ position: 'relative' }}>
-        <svg width={W} height={H} role="img" aria-label="OG versus apparent attenuation">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="OG versus apparent attenuation">
           {yTicks.map((t) => (
             <g key={t}>
               <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} stroke="var(--grid)" />
@@ -354,19 +362,20 @@ function AttenuationChart() {
               key={p.s.id}
               cx={x(p.og)}
               cy={y(p.atten)}
-              r={hover === i || p.s.id === selectedId ? 8 : 5.5}
+              r={hover?.i === i || p.s.id === selectedId ? 8 : 5.5}
               fill={srmToHex(p.srm)}
               stroke={p.s.id === selectedId ? '#ffffff' : 'var(--page)'}
               strokeWidth={2}
               style={{ cursor: 'pointer' }}
-              onMouseEnter={() => setHover(i)}
+              onMouseEnter={(e) => setHover(tipAt(e, i, wrapRef.current))}
+              onMouseMove={(e) => setHover(tipAt(e, i, wrapRef.current))}
               onMouseLeave={() => setHover(null)}
               onClick={() => setSelectedId(p.s.id)}
             />
           ))}
         </svg>
-        {h && (
-          <div className="tooltip3d" style={{ left: x(h.og), top: y(h.atten) }}>
+        {h && hover && (
+          <div className="tooltip3d" style={{ left: hover.mx, top: hover.my }}>
             <div className="t-name">
               {h.s.categoryId ? `${h.s.id} ` : ''}
               {h.s.name}
@@ -376,7 +385,6 @@ function AttenuationChart() {
             </div>
           </div>
         )}
-      </div>
     </div>
   )
 }
@@ -386,35 +394,45 @@ export type VitalsPage = 'strength' | 'ferment' | 'color'
 export default function VitalsView({ page = 'strength', goToSpace }: { page?: VitalsPage; goToSpace?: () => void }) {
   const { selectedId, allStyles, setSelectedId } = useAnalysis()
   const selected: BeerStyle | undefined = allStyles.find((s) => s.id === selectedId)
+  // the scatters fill the viewport; the color ladder is a tall scroll list
+  const immersive = page !== 'color'
+
+  const banner = selected && (
+    <div
+      className={immersive ? 'controls-bar' : 'chart-card'}
+      style={{ display: 'flex', gap: 12, alignItems: 'center' }}
+    >
+      <strong>
+        {selected.categoryId ? `${selected.id} ` : ''}
+        {selected.name}
+      </strong>
+      <span style={{ color: 'var(--muted)' }}>{selected.category}</span>
+      {goToSpace && selected.hasStats && (
+        <button className="btn" onClick={goToSpace}>
+          View in 3D space ↗
+        </button>
+      )}
+      <button className="btn" onClick={() => setSelectedId(null)}>
+        Clear
+      </button>
+    </div>
+  )
+
   return (
     <div className="view">
-      <div className="main-panel">
-        <div className="charts">
-          {selected && (
-            <div className="chart-card" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <strong>
-                {selected.categoryId ? `${selected.id} ` : ''}
-                {selected.name}
-              </strong>
-              <span style={{ color: 'var(--muted)' }}>{selected.category}</span>
-              {goToSpace && selected.hasStats && (
-                <button className="btn" style={{ marginLeft: 'auto' }} onClick={goToSpace}>
-                  View in 3D space ↗
-                </button>
-              )}
-              <button
-                className="btn"
-                style={goToSpace && selected.hasStats ? undefined : { marginLeft: 'auto' }}
-                onClick={() => setSelectedId(null)}
-              >
-                Clear selection
-              </button>
-            </div>
-          )}
-          {page === 'strength' && <Scatter />}
-          {page === 'ferment' && <AttenuationChart />}
-          {page === 'color' && <SrmLadder />}
-        </div>
+      <div className={`main-panel${immersive ? ' immersive' : ''}`}>
+        {immersive ? (
+          <>
+            {banner}
+            {page === 'strength' && <Scatter />}
+            {page === 'ferment' && <AttenuationChart />}
+          </>
+        ) : (
+          <div className="charts">
+            {banner}
+            <SrmLadder />
+          </div>
+        )}
       </div>
     </div>
   )

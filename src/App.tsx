@@ -121,6 +121,7 @@ function Shell() {
   }, [page, guideId, selectedId])
 
   const subPages = useMemo(() => NAV.find((g) => g.group === activeGroup)!.pages, [activeGroup])
+  const [aboutOpen, setAboutOpen] = useState(false)
 
   const goToPage = (p: PageId) => setPage(p)
 
@@ -158,6 +159,9 @@ function Shell() {
                 </option>
               ))}
             </select>
+            <button className="helpx" onClick={() => setAboutOpen(true)} title="About the data" aria-label="About the data">
+              ⓘ
+            </button>
           </div>
         </div>
         <nav className="subtabs" aria-label={`${activeGroup} pages`}>
@@ -169,6 +173,35 @@ function Shell() {
           ))}
         </nav>
       </header>
+
+      {aboutOpen && (
+        <div className="modal-backdrop" onClick={() => setAboutOpen(false)}>
+          <div className="modal" role="dialog" aria-modal="true" aria-label="About the data" onClick={(e) => e.stopPropagation()}>
+            <button className="closex" onClick={() => setAboutOpen(false)} aria-label="Close">
+              ×
+            </button>
+            <h2>About the data</h2>
+            <p>
+              Style data: BJCP 2021 &amp; 2015 Beer Style Guidelines (© Beer Judge
+              Certification Program) and Brewers Association 2017 Beer Style Guidelines,
+              via the MIT-licensed{' '}
+              <a href="https://github.com/beerjson/bjcp-json" target="_blank" rel="noreferrer">
+                beerjson/bjcp-json
+              </a>{' '}
+              dataset.
+            </p>
+            <p>
+              Hop chemistry merges Yakima Chief, Barth-Haas, Hopsteiner &amp; Crosby
+              published ranges. Recipe corpus: BrewDog DIY Dog (415 published recipes,
+              © BrewDog) via the MIT-licensed alxiw/punkapi archive.
+            </p>
+            <p>
+              All analysis (PCA, UMAP, k-means, hierarchical clustering, Jaccard
+              similarity) runs live in your browser — nothing is uploaded anywhere.
+            </p>
+          </div>
+        </div>
+      )}
 
       {page === 'space' && <SpaceView />}
       {page === 'taxonomy' && <TaxonomyView goToSpace={() => goToPage('space')} />}
@@ -195,14 +228,7 @@ function Shell() {
       {page === 'browse' && <BrowseView goToSpace={() => goToPage('space')} />}
       {page === 'recipes' && <RecipeView goToSpace={() => goToPage('space')} />}
 
-      <footer className="foot">
-        Style data: BJCP 2021 &amp; 2015 Beer Style Guidelines (© Beer Judge Certification
-        Program) and Brewers Association 2017 Beer Style Guidelines, via the MIT-licensed{' '}
-        <a href="https://github.com/beerjson/bjcp-json" target="_blank" rel="noreferrer">
-          beerjson/bjcp-json
-        </a>{' '}
-        dataset. Analysis (PCA, UMAP, k-means, Jaccard) runs live in your browser.
-      </footer>
+
     </div>
   )
 }

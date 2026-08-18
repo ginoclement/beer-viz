@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { GUIDES } from '../state/useAnalysis'
 import type { BeerStyle, GuideId } from '../lib/types'
 import { buildFeatureSpace } from '../lib/features'
@@ -6,8 +6,8 @@ import { projectPca } from '../lib/projection'
 import { GUIDE_COLORS } from '../lib/palette'
 import { matchGuides } from '../lib/guideMatch'
 import { useCardExpand } from '../components/CardExpand'
-import { attachPanZoom, identityView } from '../lib/panZoom'
 import ChartHelp from '../components/ChartHelp'
+import { useSvgPanZoom } from '../components/useSvgPanZoom'
 
 function Delta({ a, b, digits = 1, unit = '' }: { a: number | null; b: number | null; digits?: number; unit?: string }) {
   if (a == null || b == null) return <span style={{ color: 'var(--muted)' }}>—</span>
@@ -28,10 +28,8 @@ const midOf = (s: BeerStyle, key: 'abv' | 'ibu' | 'srm'): number | null => {
 
 function OverlayScatter({ guideA, guideB }: { guideA: GuideId; guideB: GuideId }) {
   const [hover, setHover] = useState<{ x: number; y: number; label: string; guide: string } | null>(null)
-  const { cardClass, button } = useCardExpand()
   const wrapRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
-  const [zoom, setZoom] = useState(identityView())
   const data = useMemo(() => {
     const ga = GUIDES.find((g) => g.guide === guideA)!
     const gb = GUIDES.find((g) => g.guide === guideB)!
@@ -44,9 +42,9 @@ function OverlayScatter({ guideA, guideB }: { guideA: GuideId; guideB: GuideId }
     return all.map((x, i) => ({ ...x, p: proj.points[i] }))
   }, [guideA, guideB])
 
-  const W = 820
-  const H = 460
-  const pad = 26
+  const W = 1200
+  const H = 760
+  const pad = 60
   const xs = data.map((d) => d.p[0])
   const ys = data.map((d) => d.p[1])
   const minX = Math.min(...xs)
@@ -56,35 +54,25 @@ function OverlayScatter({ guideA, guideB }: { guideA: GuideId; guideB: GuideId }
   const x = (v: number) => pad + ((v - minX) / (maxX - minX || 1)) * (W - 2 * pad)
   const y = (v: number) => H - pad - ((v - minY) / (maxY - minY || 1)) * (H - 2 * pad)
 
-  useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
-    const view = identityView()
-    const pz = attachPanZoom(svg as unknown as HTMLElement, {
-      view,
-      toCenter: (e) => {
-        const rect = svg.getBoundingClientRect()
-        return [
-          ((e.clientX - rect.left - rect.width / 2) * W) / rect.width,
-          ((e.clientY - rect.top - rect.height / 2) * H) / rect.height,
-        ]
-      },
-      onChange: () => setZoom({ ...view }),
-      maxK: 8,
-    })
-    return pz.cleanup
-  }, [])
-
-  const k = zoom.k
-  const vb = {
-    x: W / 2 - zoom.tx / k - W / (2 * k),
-    y: H / 2 - zoom.ty / k - H / (2 * k),
-    w: W / k,
-    h: H / k,
-  }
+  const { vb, k } = useSvgPanZoom(svgRef, W, H, { minK: 1, maxK: 8 })
 
   return (
-    <div className={`chart-card${cardClass}`}>
+    <div className="stage" ref={wrapRef}>
+      <div className="stage-title">
+        <h2>Two guidelines, one map</h2>
+        <div style={{ display: 'flex', gap: 14, margin: '4px 0 2px', flexWrap: 'wrap' }}>
+          {[guideA, guideB].map((g) => (
+            <span key={g} style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--ink-2)', fontSize: 11.5 }}>
+              <span className="srmdot" style={{ background: GUIDE_COLORS[g], border: 'none', width: 9, height: 9 }} />
+              {GUIDES.find((x) => x.guide === g)!.label}
+            </span>
+          ))}
+        </div>
+        <p className="sub">
+          Both guidelines in one PCA space. Where the two systems describe the same beer,
+          their points land together. Scroll to zoom (names appear) · drag to pan.
+        </p>
+      </div>
       <div className="cardtools">
         <ChartHelp title="Reading the cross-guideline map">
           <p>
@@ -110,33 +98,14 @@ function OverlayScatter({ guideA, guideB }: { guideA: GuideId; guideB: GuideId }
             double-click to reset.
           </p>
         </ChartHelp>
-        {button}
       </div>
-      <h2>Two guidelines, one map</h2>
-      <p className="sub">
-        Styles from both guidelines embedded in a single PCA space (first two components).
-        Where the two systems describe the same beer, their points land together.
-        Scroll to zoom (names appear), drag to pan, double-click to reset.
-      </p>
-      <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
-        {[guideA, guideB].map((g) => (
-          <span key={g} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--ink-2)', fontSize: 12.5 }}>
-            <span className="srmdot" style={{ background: GUIDE_COLORS[g], border: 'none' }} />
-            {GUIDES.find((x) => x.guide === g)!.label}
-          </span>
-        ))}
-      </div>
-      <div ref={wrapRef} style={{ position: 'relative' }}>
-        <svg
-          ref={svgRef}
-          viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
-          width={W}
-          height={H}
-          style={{ width: '100%', height: 'auto', display: 'block', touchAction: 'none' }}
-          role="img"
-          aria-label="Cross-guideline PCA overlay"
-        >
-          <rect x={0} y={0} width={W} height={H} fill="var(--page)" rx={8} />
+      <svg
+        ref={svgRef}
+        viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label="Cross-guideline PCA overlay"
+      >
           {data.map((d, i) => (
             <circle
               key={i}
@@ -177,13 +146,12 @@ function OverlayScatter({ guideA, guideB }: { guideA: GuideId; guideB: GuideId }
               </text>
             ))}
         </svg>
-        {hover && (
-          <div className="tooltip3d" style={{ left: hover.x, top: hover.y }}>
-            <div className="t-name">{hover.label}</div>
-            <div className="t-sub">{hover.guide}</div>
-          </div>
-        )}
-      </div>
+      {hover && (
+        <div className="tooltip3d" style={{ left: hover.x, top: hover.y }}>
+          <div className="t-name">{hover.label}</div>
+          <div className="t-sub">{hover.guide}</div>
+        </div>
+      )}
     </div>
   )
 }
@@ -216,7 +184,7 @@ export default function CompareView({ page = 'map' }: { page?: ComparePage }) {
 
   return (
     <div className="view">
-      <div className="main-panel">
+      <div className={`main-panel${page === 'map' ? ' immersive' : ''}`}>
         <div className="controls-bar">
           <label className="ctl">
             Compare
@@ -255,9 +223,9 @@ export default function CompareView({ page = 'map' }: { page?: ComparePage }) {
             </span>
           )}
         </div>
-        <div className="charts">
-          {page === 'map' && <OverlayScatter guideA={guideA} guideB={guideB} />}
-          {page === 'drift' && (
+        {page === 'map' && <OverlayScatter guideA={guideA} guideB={guideB} />}
+        {page === 'drift' && (
+          <div className="charts">
           <div className={`chart-card${tableCard.cardClass}`}>
             <div className="cardtools">
               <ChartHelp title="Reading the drift table">
@@ -364,8 +332,8 @@ export default function CompareView({ page = 'map' }: { page?: ComparePage }) {
               </>
             )}
           </div>
+          </div>
           )}
-        </div>
       </div>
     </div>
   )

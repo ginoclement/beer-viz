@@ -8,6 +8,7 @@ import { srmToHex } from '../lib/srm'
 import { midVitals } from '../lib/features'
 import { euclidean, jaccard } from '../lib/similarity'
 import StyleDetail from '../components/StyleDetail'
+import SidePanel from '../components/SidePanel'
 import ChartHelp from '../components/ChartHelp'
 import type { BeerStyle } from '../lib/types'
 
@@ -357,7 +358,7 @@ export default function SpaceView() {
 
   return (
     <div className="view">
-      <div className="main-panel">
+      <div className="main-panel immersive">
         <div className="controls-bar">
           <label className="ctl">
             Projection
@@ -475,7 +476,7 @@ export default function SpaceView() {
           <SpaceLegend />
         </div>
       </div>
-      <aside className="sidebar">
+      <SidePanel>
         {selected ? (
           <StyleDetail style={selected} onClose={() => setSelectedId(null)} />
         ) : (
@@ -507,7 +508,7 @@ export default function SpaceView() {
             )}
           </div>
         )}
-      </aside>
+      </SidePanel>
     </div>
   )
 }
