@@ -92,11 +92,11 @@ function Shell() {
       </header>
 
       {tab === 'space' && <SpaceView />}
-      {tab === 'similarity' && <SimilarityView />}
-      {tab === 'browse' && <BrowseView />}
+      {tab === 'similarity' && <SimilarityView goToSpace={() => setTab('space')} />}
+      {tab === 'browse' && <BrowseView goToSpace={() => setTab('space')} />}
       {tab === 'hops' && <HopsView />}
-      {tab === 'vitals' && <VitalsView />}
-      {tab === 'matrix' && <MatrixView />}
+      {tab === 'vitals' && <VitalsView goToSpace={() => setTab('space')} />}
+      {tab === 'matrix' && <MatrixView goToSpace={() => setTab('space')} />}
       {tab === 'compare' && <CompareView />}
       {tab === 'recipes' && <RecipeView goToSpace={() => setTab('space')} />}
 

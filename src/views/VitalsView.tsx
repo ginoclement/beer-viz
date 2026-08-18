@@ -303,7 +303,7 @@ function AttenuationChart() {
   )
 }
 
-export default function VitalsView() {
+export default function VitalsView({ goToSpace }: { goToSpace?: () => void }) {
   const { selectedId, allStyles, setSelectedId } = useAnalysis()
   const selected: BeerStyle | undefined = allStyles.find((s) => s.id === selectedId)
   return (
@@ -317,7 +317,16 @@ export default function VitalsView() {
                 {selected.name}
               </strong>
               <span style={{ color: 'var(--muted)' }}>{selected.category}</span>
-              <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setSelectedId(null)}>
+              {goToSpace && selected.hasStats && (
+                <button className="btn" style={{ marginLeft: 'auto' }} onClick={goToSpace}>
+                  View in 3D space ↗
+                </button>
+              )}
+              <button
+                className="btn"
+                style={goToSpace && selected.hasStats ? undefined : { marginLeft: 'auto' }}
+                onClick={() => setSelectedId(null)}
+              >
                 Clear selection
               </button>
             </div>

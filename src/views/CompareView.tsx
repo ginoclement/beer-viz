@@ -1,81 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { GUIDES } from '../state/useAnalysis'
 import type { BeerStyle, GuideId } from '../lib/types'
 import { buildFeatureSpace } from '../lib/features'
 import { projectPca } from '../lib/projection'
 import { GUIDE_COLORS } from '../lib/palette'
-
-const STOP_WORDS = new Set(['style', 'beer', 'ale', 'lager'])
-
-function normName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/-/g, ' ')
-    .replace(/india pale ale/g, 'ipa')
-    .replace(/[^a-z0-9 ]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function tokens(name: string): Set<string> {
-  return new Set(normName(name).split(' ').filter((w) => w && !STOP_WORDS.has(w)))
-}
-
-function tokenSim(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0
-  let inter = 0
-  for (const t of a) if (b.has(t)) inter++
-  return inter / (a.size + b.size - inter)
-}
-
-interface Match {
-  a: BeerStyle
-  b: BeerStyle
-  fuzzy: boolean
-}
-
-function matchGuides(as: BeerStyle[], bs: BeerStyle[]): { matches: Match[]; onlyA: BeerStyle[]; onlyB: BeerStyle[] } {
-  const usedB = new Set<string>()
-  const matches: Match[] = []
-  const byNorm = new Map<string, BeerStyle>()
-  for (const b of bs) {
-    const k = normName(b.name)
-    if (!byNorm.has(k)) byNorm.set(k, b)
-  }
-  const unmatchedA: BeerStyle[] = []
-  for (const a of as) {
-    const hit = byNorm.get(normName(a.name))
-    if (hit && !usedB.has(hit.id)) {
-      matches.push({ a, b: hit, fuzzy: false })
-      usedB.add(hit.id)
-    } else {
-      unmatchedA.push(a)
-    }
-  }
-  // fuzzy pass on word sets (handles "American-Style India Pale Ale" vs "American IPA")
-  const onlyA: BeerStyle[] = []
-  for (const a of unmatchedA) {
-    const ta = tokens(a.name)
-    let best: BeerStyle | null = null
-    let bestS = 0.65
-    for (const b of bs) {
-      if (usedB.has(b.id)) continue
-      const s = tokenSim(ta, tokens(b.name))
-      if (s > bestS) {
-        bestS = s
-        best = b
-      }
-    }
-    if (best) {
-      matches.push({ a, b: best, fuzzy: true })
-      usedB.add(best.id)
-    } else {
-      onlyA.push(a)
-    }
-  }
-  const onlyB = bs.filter((b) => !usedB.has(b.id))
-  return { matches, onlyA, onlyB }
-}
+import { matchGuides } from '../lib/guideMatch'
+import { useCardExpand } from '../components/CardExpand'
+import { attachPanZoom, identityView } from '../lib/panZoom'
 
 function Delta({ a, b, digits = 1, unit = '' }: { a: number | null; b: number | null; digits?: number; unit?: string }) {
   if (a == null || b == null) return <span style={{ color: 'var(--muted)' }}>—</span>
@@ -96,6 +27,10 @@ const midOf = (s: BeerStyle, key: 'abv' | 'ibu' | 'srm'): number | null => {
 
 function OverlayScatter({ guideA, guideB }: { guideA: GuideId; guideB: GuideId }) {
   const [hover, setHover] = useState<{ x: number; y: number; label: string; guide: string } | null>(null)
+  const { cardClass, button } = useCardExpand()
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [zoom, setZoom] = useState(identityView())
   const data = useMemo(() => {
     const ga = GUIDES.find((g) => g.guide === guideA)!
     const gb = GUIDES.find((g) => g.guide === guideB)!
@@ -120,12 +55,41 @@ function OverlayScatter({ guideA, guideB }: { guideA: GuideId; guideB: GuideId }
   const x = (v: number) => pad + ((v - minX) / (maxX - minX || 1)) * (W - 2 * pad)
   const y = (v: number) => H - pad - ((v - minY) / (maxY - minY || 1)) * (H - 2 * pad)
 
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    const view = identityView()
+    const pz = attachPanZoom(svg as unknown as HTMLElement, {
+      view,
+      toCenter: (e) => {
+        const rect = svg.getBoundingClientRect()
+        return [
+          ((e.clientX - rect.left - rect.width / 2) * W) / rect.width,
+          ((e.clientY - rect.top - rect.height / 2) * H) / rect.height,
+        ]
+      },
+      onChange: () => setZoom({ ...view }),
+      maxK: 8,
+    })
+    return pz.cleanup
+  }, [])
+
+  const k = zoom.k
+  const vb = {
+    x: W / 2 - zoom.tx / k - W / (2 * k),
+    y: H / 2 - zoom.ty / k - H / (2 * k),
+    w: W / k,
+    h: H / k,
+  }
+
   return (
-    <div className="chart-card">
+    <div className={`chart-card${cardClass}`}>
+      {button}
       <h2>Two guidelines, one map</h2>
       <p className="sub">
         Styles from both guidelines embedded in a single PCA space (first two components).
         Where the two systems describe the same beer, their points land together.
+        Scroll to zoom (names appear), drag to pan, double-click to reset.
       </p>
       <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
         {[guideA, guideB].map((g) => (
@@ -135,25 +99,56 @@ function OverlayScatter({ guideA, guideB }: { guideA: GuideId; guideB: GuideId }
           </span>
         ))}
       </div>
-      <div className="chart-scroll" style={{ position: 'relative' }}>
-        <svg width={W} height={H} role="img" aria-label="Cross-guideline PCA overlay">
+      <div ref={wrapRef} style={{ position: 'relative' }}>
+        <svg
+          ref={svgRef}
+          viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
+          width={W}
+          height={H}
+          style={{ width: '100%', height: 'auto', display: 'block', touchAction: 'none' }}
+          role="img"
+          aria-label="Cross-guideline PCA overlay"
+        >
           <rect x={0} y={0} width={W} height={H} fill="var(--page)" rx={8} />
           {data.map((d, i) => (
             <circle
               key={i}
               cx={x(d.p[0])}
               cy={y(d.p[1])}
-              r={5}
+              r={5 / k}
               fill={GUIDE_COLORS[d.guide.guide]}
               fillOpacity={0.9}
               stroke="var(--page)"
-              strokeWidth={1.5}
-              onMouseEnter={() =>
-                setHover({ x: x(d.p[0]), y: y(d.p[1]), label: d.s.name, guide: d.guide.label })
-              }
+              strokeWidth={1.5 / k}
+              onMouseEnter={(e) => {
+                const rect = wrapRef.current!.getBoundingClientRect()
+                setHover({
+                  x: e.clientX - rect.left,
+                  y: e.clientY - rect.top,
+                  label: d.s.name,
+                  guide: d.guide.label,
+                })
+              }}
               onMouseLeave={() => setHover(null)}
             />
           ))}
+          {k >= 2.2 &&
+            data.map((d, i) => (
+              <text
+                key={`l-${i}`}
+                x={x(d.p[0]) + 8 / k}
+                y={y(d.p[1]) + 3.5 / k}
+                fontSize={11 / k}
+                fontWeight={600}
+                fill="#d6d4cb"
+                stroke="#0d0d0d"
+                strokeWidth={2.5 / k}
+                paintOrder="stroke"
+                style={{ pointerEvents: 'none' }}
+              >
+                {d.s.name}
+              </text>
+            ))}
         </svg>
         {hover && (
           <div className="tooltip3d" style={{ left: hover.x, top: hover.y }}>
@@ -167,6 +162,7 @@ function OverlayScatter({ guideA, guideB }: { guideA: GuideId; guideB: GuideId }
 }
 
 export default function CompareView() {
+  const tableCard = useCardExpand()
   const [guideA, setGuideA] = useState<GuideId>('bjcp2015')
   const [guideB, setGuideB] = useState<GuideId>('bjcp2021')
   const [show, setShow] = useState<'changed' | 'all' | 'added' | 'removed'>('changed')
@@ -230,7 +226,8 @@ export default function CompareView() {
         </div>
         <div className="charts">
           <OverlayScatter guideA={guideA} guideB={guideB} />
-          <div className="chart-card">
+          <div className={`chart-card${tableCard.cardClass}`}>
+            {tableCard.button}
             {(show === 'changed' || show === 'all') && (
               <>
                 <h2>
@@ -240,7 +237,7 @@ export default function CompareView() {
                   Midpoint deltas for styles present in both guidelines. Fuzzy name matches
                   are tagged; deltas of exactly zero show as "=".
                 </p>
-                <div className="chart-scroll" style={{ maxHeight: 520, overflowY: 'auto' }}>
+                <div className="chart-scroll" style={{ maxHeight: tableCard.expanded ? 'none' : 520, overflowY: 'auto' }}>
                   <table className="cmp-table">
                     <thead>
                       <tr>

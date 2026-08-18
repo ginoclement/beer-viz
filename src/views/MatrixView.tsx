@@ -84,7 +84,7 @@ function Dendrogram({
   )
 }
 
-export default function MatrixView() {
+export default function MatrixView({ goToSpace }: { goToSpace?: () => void }) {
   const { styles, numericZ, clusterOf, alpha, setAlpha, setSelectedId, allStyles, selectedId } =
     useAnalysis()
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -226,7 +226,7 @@ export default function MatrixView() {
       </div>
       <aside className="sidebar">
         {selected ? (
-          <StyleDetail style={selected} onClose={() => setSelectedId(null)} />
+          <StyleDetail style={selected} onClose={() => setSelectedId(null)} onViewIn3d={goToSpace} />
         ) : (
           <div className="detail">
             <h2>Reading the matrix</h2>

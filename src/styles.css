@@ -371,6 +371,18 @@ label.ctl .val {
   color: var(--ink);
 }
 
+.detail .view3d {
+  display: block;
+  margin: 4px 0 10px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.detail .view3d:hover {
+  border-color: var(--accent);
+  color: var(--accent-bright);
+}
+
 /* ---------- similarity view ---------- */
 .simgrid {
   flex: 1;
@@ -445,6 +457,37 @@ label.ctl .val {
   border-radius: 12px;
   padding: 16px 18px;
   margin-bottom: 20px;
+  position: relative;
+}
+
+/* fullscreen chart card */
+.chart-card.fullscreen {
+  position: fixed;
+  inset: 14px;
+  z-index: 80;
+  margin: 0;
+  overflow: auto;
+  box-shadow: 0 16px 70px rgba(0, 0, 0, 0.75);
+}
+
+.expandx {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--ink-2);
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.expandx:hover {
+  color: var(--ink);
+  border-color: var(--muted);
 }
 
 .chart-card h2 {
@@ -487,6 +530,25 @@ label.ctl .val {
   padding: 4px 10px;
   border-bottom: 1px solid var(--grid);
   white-space: nowrap;
+}
+
+/* zebra striping keeps wide rows scannable */
+.cmp-table tbody tr:nth-child(even) td,
+.simlist tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.simlist tr.rowbtn:hover td {
+  background: var(--surface-2);
+}
+
+/* roomier variant for the hop pairing table */
+.cmp-table.roomy {
+  font-size: 13.5px;
+}
+
+.cmp-table.roomy td {
+  padding: 7px 10px;
 }
 
 .delta-up {

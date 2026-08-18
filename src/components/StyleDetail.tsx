@@ -43,10 +43,13 @@ export default function StyleDetail({
   style,
   sharedTags,
   onClose,
+  onViewIn3d,
 }: {
   style: BeerStyle
   sharedTags?: Set<string>
   onClose?: () => void
+  /** jump to the 3D style-space tab with this style selected */
+  onViewIn3d?: () => void
 }) {
   const srm = style.stats.srm
   return (
@@ -61,6 +64,11 @@ export default function StyleDetail({
         {style.name}
       </h2>
       <div className="cat">{style.category}</div>
+      {onViewIn3d && style.hasStats && (
+        <button className="btn view3d" onClick={onViewIn3d}>
+          View in 3D style space ↗
+        </button>
+      )}
 
       <div className="swatch-row">
         <div

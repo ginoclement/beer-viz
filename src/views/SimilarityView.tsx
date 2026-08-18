@@ -14,6 +14,7 @@ import { useAnalysis } from '../state/useAnalysis'
 import { combinedSimilarityMatrix, jaccard, neighborsOf } from '../lib/similarity'
 import { descriptorSimilarity } from '../lib/descriptors'
 import { clusterColor } from '../lib/palette'
+import { attachPanZoom, identityView } from '../lib/panZoom'
 import StyleDetail from '../components/StyleDetail'
 
 interface Node extends SimulationNodeDatum {
@@ -40,6 +41,8 @@ function NetworkGraph({
   // change repaints the canvas without rebuilding the force layout.
   const selectedRef = useRef(selectedId)
   const clustersRef = useRef(clusterOf)
+  const viewRef = useRef(identityView())
+  const draggedRef = useRef<() => boolean>(() => false)
 
   const matrix = useMemo(
     () => combinedSimilarityMatrix(numericZ, styles.map((s) => s.tags), alpha),
@@ -92,9 +95,12 @@ function NetworkGraph({
 
     const ctx = canvas.getContext('2d')!
     const draw = () => {
+      const view = viewRef.current
       ctx.setTransform(dpr, 0, 0, dpr, (width / 2) * dpr, (height / 2) * dpr)
       ctx.clearRect(-width / 2, -height / 2, width, height)
-      ctx.lineWidth = 1
+      ctx.translate(view.tx, view.ty)
+      ctx.scale(view.k, view.k)
+      ctx.lineWidth = 1 / view.k
       for (const l of graphRef.current?.links ?? []) {
         const s = l.source as Node
         const t = l.target as Node
@@ -120,10 +126,30 @@ function NetworkGraph({
           ctx.stroke()
         }
       }
+      // zoomed in far enough, name every node (constant screen-size text)
+      if (view.k >= 1.8) {
+        ctx.font = `600 ${11.5 / view.k}px system-ui, sans-serif`
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = '#e8e6df'
+        ctx.shadowColor = '#0d0d0d'
+        ctx.shadowBlur = 3 / view.k
+        for (const n of nodes) ctx.fillText(styles[n.i].name, n.x! + 9, n.y!)
+        ctx.shadowBlur = 0
+      }
     }
     graphRef.current = { sim, links: [], draw }
 
     sim.on('tick', draw)
+
+    const pz = attachPanZoom(canvas, {
+      view: viewRef.current,
+      toCenter: (e) => {
+        const rect = canvas.getBoundingClientRect()
+        return [e.clientX - rect.left - width / 2, e.clientY - rect.top - height / 2]
+      },
+      onChange: draw,
+    })
+    draggedRef.current = pz.dragged
 
     const ro = new ResizeObserver(() => {
       sizeCanvas()
@@ -134,6 +160,7 @@ function NetworkGraph({
     return () => {
       sim.stop()
       ro.disconnect()
+      pz.cleanup()
       graphRef.current = null
     }
   }, [styles])
@@ -157,10 +184,11 @@ function NetworkGraph({
 
   const nodeAt = (ev: React.MouseEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect()
-    const x = ev.clientX - rect.left - rect.width / 2
-    const y = ev.clientY - rect.top - rect.height / 2
+    const { k, tx, ty } = viewRef.current
+    const x = (ev.clientX - rect.left - rect.width / 2 - tx) / k
+    const y = (ev.clientY - rect.top - rect.height / 2 - ty) / k
     let best = -1
-    let bestD = 12 * 12
+    let bestD = (12 / k) ** 2
     for (const n of nodesRef.current) {
       const d = (n.x! - x) ** 2 + (n.y! - y) ** 2
       if (d < bestD) {
@@ -182,6 +210,7 @@ function NetworkGraph({
         }}
         onMouseLeave={() => setHover(null)}
         onClick={(e) => {
+          if (draggedRef.current()) return
           const i = nodeAt(e)
           if (i >= 0) onPick(styles[i].id)
         }}
@@ -199,13 +228,16 @@ function NetworkGraph({
         <div className="row" style={{ color: 'var(--ink-2)' }}>
           Links join styles above the similarity threshold; node color = k-means cluster.
         </div>
-        <div className="note">Click a node to inspect and re-rank neighbors.</div>
+        <div className="note">
+          Click a node to inspect and re-rank neighbors. Scroll to zoom (names appear),
+          drag to pan, double-click to reset.
+        </div>
       </div>
     </div>
   )
 }
 
-export default function SimilarityView() {
+export default function SimilarityView({ goToSpace }: { goToSpace?: () => void }) {
   const {
     allStyles,
     styles,
@@ -391,7 +423,7 @@ export default function SimilarityView() {
         </div>
       </div>
       <aside className="sidebar">
-        <StyleDetail style={focus} sharedTags={sharedWith} />
+        <StyleDetail style={focus} sharedTags={sharedWith} onViewIn3d={goToSpace} />
       </aside>
     </div>
   )

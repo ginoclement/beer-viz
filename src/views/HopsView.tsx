@@ -22,6 +22,8 @@ import {
   type Range,
 } from '../lib/hops'
 import { fitPca, pcaTransformAll } from '../lib/pca'
+import { attachPanZoom, identityView } from '../lib/panZoom'
+import { useCardExpand } from '../components/CardExpand'
 
 const PURPOSE_COLORS: Record<string, string> = {
   Aroma: '#3987e5',
@@ -40,9 +42,9 @@ const THIOL_LABELS = ['negligible', 'moderate', 'notable', 'high']
 
 function HopRadar({ hop }: { hop: Hop }) {
   if (!hop.aromas) return null
-  const size = 280
+  const size = 310
   const c = size / 2
-  const rMax = c - 52
+  const rMax = c - 56
   const pt = (axis: number, value: number): [number, number] => {
     const angle = (Math.PI * 2 * axis) / AROMA_AXES.length - Math.PI / 2
     const r = (value / 5) * rMax
@@ -69,8 +71,8 @@ function HopRadar({ hop }: { hop: Hop }) {
               x={lx}
               y={ly + 3}
               textAnchor="middle"
-              fontSize={9.5}
-              fill="var(--muted)"
+              fontSize={10.5}
+              fill="var(--ink-2)"
             >
               {axis}
             </text>
@@ -105,7 +107,7 @@ function OilBars({ hop }: { hop: Hop }) {
         const r = hop.oilComp[k]!
         return (
           <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }} title={title}>
-            <span style={{ width: 100, color: 'var(--ink-2)', fontSize: 12 }}>{label}</span>
+            <span style={{ width: 110, color: 'var(--ink-2)', fontSize: 12.5 }}>{label}</span>
             <div style={{ flex: 1, position: 'relative', height: 8 }}>
               <div style={{ position: 'absolute', inset: 0, background: 'var(--surface-2)', borderRadius: 4 }} />
               <div
@@ -120,13 +122,13 @@ function OilBars({ hop }: { hop: Hop }) {
                 }}
               />
             </div>
-            <span style={{ width: 64, textAlign: 'right', fontSize: 12, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+            <span style={{ width: 66, textAlign: 'right', fontSize: 12.5, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
               {fmtRange(r, 1, '%')}
             </span>
           </div>
         )
       })}
-      <div style={{ color: 'var(--muted)', fontSize: 11 }}>% of total oil ({fmtRange(hop.oilTotal, 1)} mL/100 g)</div>
+      <div style={{ color: 'var(--muted)', fontSize: 12 }}>% of total oil ({fmtRange(hop.oilTotal, 1)} mL/100 g)</div>
     </div>
   )
 }
@@ -172,7 +174,7 @@ function HopDetail({ hop, onPickHop, onPickStyle }: { hop: Hop; onPickHop: (k: s
           >
             thiols: {THIOL_LABELS[hop.thiol.level]}
           </span>{' '}
-          <span style={{ color: 'var(--muted)', fontSize: 12 }}>{hop.thiol.note}</span>
+          <span style={{ color: 'var(--muted)', fontSize: 12.5 }}>{hop.thiol.note}</span>
         </p>
       )}
 
@@ -229,7 +231,7 @@ function HopDetail({ hop, onPickHop, onPickStyle }: { hop: Hop; onPickHop: (k: s
           </span>
         </div>
       ))}
-      <p style={{ color: 'var(--muted)', fontSize: 11.5 }}>
+      <p style={{ color: 'var(--muted)', fontSize: 12 }}>
         Chemistry: Yakima Chief, Barth-Haas, Hopsteiner &amp; Crosby published ranges. Thiol
         classes are curated from brewing-science literature and approximate.
       </p>
@@ -269,7 +271,7 @@ function PairingCard({ onPickHop }: { onPickHop: (k: string) => void }) {
           and bitterness fit alone.
         </p>
       )}
-      <table className="cmp-table">
+      <table className="cmp-table roomy">
         <thead>
           <tr>
             <th>#</th>
@@ -318,7 +320,14 @@ function PairingCard({ onPickHop }: { onPickHop: (k: string) => void }) {
 }
 
 function AromaScatter({ selectedKey, onPickHop }: { selectedKey: string | null; onPickHop: (k: string) => void }) {
-  const [hover, setHover] = useState<number | null>(null)
+  const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null)
+  const { cardClass, button } = useCardExpand()
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+  const draggedRef = useRef<() => boolean>(() => false)
+  // zoom state drives the viewBox; marks/labels are sized in screen pixels
+  const [zoom, setZoom] = useState(identityView())
+
   const pts = useMemo(() => {
     const withVec = HOPS.map((h) => ({ h, v: hopAromaVector(h) })).filter(
       (x): x is { h: Hop; v: number[] } => x.v !== null && x.h.aromas !== null,
@@ -337,14 +346,49 @@ function AromaScatter({ selectedKey, onPickHop }: { selectedKey: string | null; 
   const [minY, maxY] = [Math.min(...ys), Math.max(...ys)]
   const x = (v: number) => pad + ((v - minX) / (maxX - minX || 1)) * (W - 2 * pad)
   const y = (v: number) => H - pad - ((v - minY) / (maxY - minY || 1)) * (H - 2 * pad)
-  const h = hover != null ? pts[hover] : null
+  const h = hover ? pts[hover.i] : null
+
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    const view = identityView()
+    const pz = attachPanZoom(svg as unknown as HTMLElement, {
+      view,
+      // work in svg user units so CSS scaling of the element doesn't matter
+      toCenter: (e) => {
+        const rect = svg.getBoundingClientRect()
+        return [
+          ((e.clientX - rect.left - rect.width / 2) * W) / rect.width,
+          ((e.clientY - rect.top - rect.height / 2) * H) / rect.height,
+        ]
+      },
+      onChange: () => setZoom({ ...view }),
+      maxK: 8,
+    })
+    draggedRef.current = pz.dragged
+    return pz.cleanup
+  }, [])
+
+  const k = zoom.k
+  const vb = {
+    x: W / 2 - zoom.tx / k - W / (2 * k),
+    y: H / 2 - zoom.ty / k - H / (2 * k),
+    w: W / k,
+    h: H / k,
+  }
+  const setTip = (i: number, e: React.MouseEvent) => {
+    const rect = wrapRef.current!.getBoundingClientRect()
+    setHover({ i, x: e.clientX - rect.left, y: e.clientY - rect.top })
+  }
 
   return (
-    <div className="chart-card">
+    <div className={`chart-card${cardClass}`}>
+      {button}
       <h2>The hop aroma map</h2>
       <p className="sub">
         PCA of each variety's 9-axis sensory profile (producer spider charts). Neighboring
-        hops smell alike; color is brewing purpose. Click to inspect.
+        hops smell alike; color is brewing purpose. Click to inspect · scroll to zoom
+        (names appear) · drag to pan · double-click to reset.
       </p>
       <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
         {Object.entries(PURPOSE_COLORS).map(([p, c]) => (
@@ -354,30 +398,63 @@ function AromaScatter({ selectedKey, onPickHop }: { selectedKey: string | null; 
           </span>
         ))}
       </div>
-      <div className="chart-scroll" style={{ position: 'relative' }}>
-        <svg width={W} height={H} role="img" aria-label="PCA map of hop aroma profiles">
+      <div ref={wrapRef} style={{ position: 'relative' }}>
+        <svg
+          ref={svgRef}
+          viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
+          width={W}
+          height={H}
+          style={{ width: '100%', height: 'auto', display: 'block', touchAction: 'none' }}
+          role="img"
+          aria-label="PCA map of hop aroma profiles"
+        >
           <rect x={0} y={0} width={W} height={H} fill="var(--page)" rx={8} />
           {pts.map((d, i) => {
             const sel = d.h.key === selectedKey
+            const r = (sel ? 8 : hover?.i === i ? 7 : 5) / k
             return (
               <circle
                 key={d.h.key}
                 cx={x(d.p[0])}
                 cy={y(d.p[1])}
-                r={sel ? 8 : hover === i ? 7 : 5}
+                r={r}
                 fill={purposeColor(d.h.purpose)}
                 stroke={sel ? '#ffffff' : 'var(--page)'}
-                strokeWidth={sel ? 2 : 1.5}
+                strokeWidth={(sel ? 2 : 1.5) / k}
                 style={{ cursor: 'pointer' }}
-                onMouseEnter={() => setHover(i)}
+                onMouseEnter={(e) => setTip(i, e)}
+                onMouseMove={(e) => setTip(i, e)}
                 onMouseLeave={() => setHover(null)}
-                onClick={() => onPickHop(d.h.key)}
+                onClick={() => {
+                  if (!draggedRef.current()) onPickHop(d.h.key)
+                }}
               />
             )
           })}
+          {(k >= 2.2 || selectedKey) &&
+            pts.map((d) => {
+              const sel = d.h.key === selectedKey
+              if (k < 2.2 && !sel) return null
+              return (
+                <text
+                  key={`l-${d.h.key}`}
+                  x={x(d.p[0]) + 9 / k}
+                  y={y(d.p[1]) + 3.5 / k}
+                  fontSize={11.5 / k}
+                  fontWeight={sel ? 700 : 600}
+                  fill={sel ? '#ffffff' : '#d6d4cb'}
+                  stroke="#0d0d0d"
+                  strokeWidth={2.5 / k}
+                  paintOrder="stroke"
+                  style={{ pointerEvents: 'none' }}
+                >
+                  {d.h.name}
+                </text>
+              )
+            })}
         </svg>
-        {h && (
-          <div className="tooltip3d" style={{ left: x(h.p[0]), top: y(h.p[1]) }}>
+        {h && hover && (
+          <div className="tooltip3d" style={{ left: hover.x, top: hover.y }}>
             <div className="t-name">{h.h.name}</div>
             <div className="t-sub">
               {h.h.country ?? ''} · {h.h.purpose}
@@ -407,6 +484,11 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
   // Selection is read through a ref so clicking a hop repaints the canvas
   // without rebuilding the force layout.
   const selectedRef = useRef(selectedKey)
+  const viewRef = useRef(identityView())
+  const draggedRef = useRef<() => boolean>(() => false)
+  const { expanded, cardClass, button } = useCardExpand()
+  const expandedRef = useRef(expanded)
+  expandedRef.current = expanded
 
   const hops = useMemo(() => HOPS.filter((h) => h.aromas), [])
 
@@ -453,6 +535,8 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
     let height = 560
     const sizeCanvas = () => {
       width = wrap.clientWidth
+      // fullscreen card: let the graph take the viewport height
+      height = expandedRef.current ? Math.max(480, window.innerHeight - 250) : 560
       canvas.width = width * dpr
       canvas.height = height * dpr
       canvas.style.width = `${width}px`
@@ -473,8 +557,11 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
 
     const ctx = canvas.getContext('2d')!
     const draw = () => {
+      const view = viewRef.current
       ctx.setTransform(dpr, 0, 0, dpr, (width / 2) * dpr, (height / 2) * dpr)
       ctx.clearRect(-width / 2, -height / 2, width, height)
+      ctx.translate(view.tx, view.ty)
+      ctx.scale(view.k, view.k)
       for (const l of graphRef.current?.links ?? []) {
         const s = l.source as Node
         const t = l.target as Node
@@ -502,9 +589,28 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
           ctx.stroke()
         }
       }
+      // zoomed in far enough, name every hop (constant screen-size text)
+      if (view.k >= 1.6) {
+        ctx.font = `600 ${11 / view.k}px system-ui, sans-serif`
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = '#e8e6df'
+        ctx.shadowColor = '#0d0d0d'
+        ctx.shadowBlur = 3 / view.k
+        for (const n of nodes) ctx.fillText(hops[n.i].name, n.x! + 8, n.y!)
+        ctx.shadowBlur = 0
+      }
     }
     graphRef.current = { sim, links: [], draw }
     sim.on('tick', draw)
+    const pz = attachPanZoom(canvas, {
+      view: viewRef.current,
+      toCenter: (e) => {
+        const rect = canvas.getBoundingClientRect()
+        return [e.clientX - rect.left - width / 2, e.clientY - rect.top - height / 2]
+      },
+      onChange: draw,
+    })
+    draggedRef.current = pz.dragged
     const ro = new ResizeObserver(() => {
       sizeCanvas()
       draw()
@@ -513,6 +619,7 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
     return () => {
       sim.stop()
       ro.disconnect()
+      pz.cleanup()
       graphRef.current = null
     }
   }, [hops])
@@ -535,10 +642,11 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
 
   const nodeAt = (ev: React.MouseEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect()
-    const x = ev.clientX - rect.left - rect.width / 2
-    const y = ev.clientY - rect.top - 280
+    const { k, tx, ty } = viewRef.current
+    const x = (ev.clientX - rect.left - rect.width / 2 - tx) / k
+    const y = (ev.clientY - rect.top - rect.height / 2 - ty) / k
     let best = -1
-    let bestD = 12 * 12
+    let bestD = (12 / k) ** 2
     for (const n of nodesRef.current) {
       const d = (n.x! - x) ** 2 + (n.y! - y) ** 2
       if (d < bestD) {
@@ -550,12 +658,14 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
   }
 
   return (
-    <div className="chart-card">
+    <div className={`chart-card${cardClass}`}>
+      {button}
       <h2>Substitution &amp; kinship network</h2>
       <p className="sub">
         <span style={{ color: 'var(--accent-bright)' }}>Gold edges</span> are
         producer-listed "brews well with / substitute" relationships (Hopsteiner);
         gray edges join hops whose measured aroma profiles are nearly identical.
+        Scroll to zoom (names appear), drag to pan, double-click to reset.
       </p>
       <label className="ctl" style={{ marginBottom: 8 }}>
         Aroma-similarity threshold
@@ -572,6 +682,7 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
           }}
           onMouseLeave={() => setHover(null)}
           onClick={(e) => {
+            if (draggedRef.current()) return
             const i = nodeAt(e)
             if (i >= 0) onPickHop(hops[i].key)
           }}

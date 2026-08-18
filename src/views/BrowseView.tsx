@@ -17,7 +17,7 @@ function fmtRange(r: [number, number] | null, digits = 0): string {
   return r[0] === r[1] ? f(r[0]) : `${f(r[0])}–${f(r[1])}`
 }
 
-export default function BrowseView() {
+export default function BrowseView({ goToSpace }: { goToSpace?: () => void }) {
   const { allStyles, selectedId, setSelectedId } = useAnalysis()
   const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
@@ -175,7 +175,7 @@ export default function BrowseView() {
       </div>
       <aside className="sidebar">
         {selected ? (
-          <StyleDetail style={selected} onClose={() => setSelectedId(null)} />
+          <StyleDetail style={selected} onClose={() => setSelectedId(null)} onViewIn3d={goToSpace} />
         ) : (
           <div className="detail">
             <h2>Browse every style</h2>
