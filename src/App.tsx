@@ -10,6 +10,7 @@ import RecipeView from './views/RecipeView'
 import BrowseView from './views/BrowseView'
 import HopsView from './views/HopsView'
 import IngredientsView from './views/IngredientsView'
+import TaxonomyView from './views/TaxonomyView'
 
 /**
  * Two-level navigation: each visualization is its own page, and pages are
@@ -21,6 +22,7 @@ const NAV = [
     group: 'Style Space',
     pages: [
       { id: 'space', label: '3D Space' },
+      { id: 'taxonomy', label: 'Family Tree of Beer' },
       { id: 'similarity', label: 'Similarity Network' },
       { id: 'matrix', label: 'Similarity Matrix' },
       { id: 'tree', label: 'Family Tree' },
@@ -169,6 +171,7 @@ function Shell() {
       </header>
 
       {page === 'space' && <SpaceView />}
+      {page === 'taxonomy' && <TaxonomyView goToSpace={() => goToPage('space')} />}
       {page === 'similarity' && <SimilarityView goToSpace={() => goToPage('space')} />}
       {page === 'matrix' && <MatrixView page="matrix" goToSpace={() => goToPage('space')} />}
       {page === 'tree' && <MatrixView page="tree" goToSpace={() => goToPage('space')} />}

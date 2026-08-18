@@ -56,6 +56,11 @@ export interface PanZoomOptions {
   onChange: () => void
   /** double-click handler; defaults to resetting to the identity view */
   onReset?: () => void
+  /**
+   * world-units per screen pixel at k = 1; SVG viewBox views pass this so
+   * drag distance matches the cursor exactly. Defaults to 1 (canvas views).
+   */
+  panScale?: () => number
   minK?: number
   maxK?: number
 }
@@ -74,7 +79,7 @@ const DRAG_THRESHOLD = 4
  */
 export function attachPanZoom(
   el: HTMLElement,
-  { view, toCenter, onChange, onReset, minK = 0.15, maxK = 10 }: PanZoomOptions,
+  { view, toCenter, onChange, onReset, panScale, minK = 0.15, maxK = 10 }: PanZoomOptions,
 ): { cleanup: () => void; dragged: () => boolean } {
   let panning = false
   let engaged = false // passed the drag threshold
@@ -113,8 +118,9 @@ export function attachPanZoom(
       lastY = e.clientY
       return
     }
-    view.tx += e.clientX - lastX
-    view.ty += e.clientY - lastY
+    const ps = panScale?.() ?? 1
+    view.tx += (e.clientX - lastX) * ps
+    view.ty += (e.clientY - lastY) * ps
     lastX = e.clientX
     lastY = e.clientY
     onChange()
