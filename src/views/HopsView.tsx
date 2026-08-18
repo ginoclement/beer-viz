@@ -5,6 +5,8 @@ import {
   forceManyBody,
   forceCenter,
   forceCollide,
+  type Simulation,
+  type ForceLink,
   type SimulationNodeDatum,
   type SimulationLinkDatum,
 } from 'd3-force'
@@ -399,6 +401,12 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
   const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null)
   const nodesRef = useRef<Node[]>([])
   const [threshold, setThreshold] = useState(0.93)
+  const graphRef = useRef<{ sim: Simulation<Node, Link>; links: Link[]; draw: () => void } | null>(
+    null,
+  )
+  // Selection is read through a ref so clicking a hop repaints the canvas
+  // without rebuilding the force layout.
+  const selectedRef = useRef(selectedKey)
 
   const hops = useMemo(() => HOPS.filter((h) => h.aromas), [])
 
@@ -431,13 +439,15 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hops, threshold])
 
+  // Build the simulation once per hop set. Threshold changes swap links in
+  // place and selection changes only repaint, so the layout never
+  // regenerates under a click.
   useEffect(() => {
     const canvas = canvasRef.current
     const wrap = wrapRef.current
     if (!canvas || !wrap) return
     const nodes: Node[] = hops.map((_, i) => ({ i, index: i }))
     nodesRef.current = nodes
-    const linkCopies = links.map((l) => ({ ...l }))
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
     let width = wrap.clientWidth
     let height = 560
@@ -453,7 +463,7 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
     const sim = forceSimulation(nodes)
       .force(
         'link',
-        forceLink<Node, Link>(linkCopies)
+        forceLink<Node, Link>([])
           .distance((l) => (l.listed ? 46 : 34 + (1 - l.w) * 60))
           .strength((l) => (l.listed ? 0.5 : 0.25 + l.w * 0.4)),
       )
@@ -465,7 +475,7 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
     const draw = () => {
       ctx.setTransform(dpr, 0, 0, dpr, (width / 2) * dpr, (height / 2) * dpr)
       ctx.clearRect(-width / 2, -height / 2, width, height)
-      for (const l of linkCopies) {
+      for (const l of graphRef.current?.links ?? []) {
         const s = l.source as Node
         const t = l.target as Node
         ctx.strokeStyle = l.listed
@@ -478,7 +488,7 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
         ctx.stroke()
       }
       for (const n of nodes) {
-        const sel = hops[n.i].key === selectedKey
+        const sel = hops[n.i].key === selectedRef.current
         ctx.beginPath()
         ctx.arc(n.x!, n.y!, sel ? 7.5 : 5, 0, Math.PI * 2)
         ctx.fillStyle = purposeColor(hops[n.i].purpose)
@@ -493,6 +503,7 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
         }
       }
     }
+    graphRef.current = { sim, links: [], draw }
     sim.on('tick', draw)
     const ro = new ResizeObserver(() => {
       sizeCanvas()
@@ -502,8 +513,25 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
     return () => {
       sim.stop()
       ro.disconnect()
+      graphRef.current = null
     }
-  }, [hops, links, selectedKey])
+  }, [hops])
+
+  // Swap the link set in place and gently reheat: node positions survive
+  // threshold changes instead of the graph re-laying-out from scratch.
+  useEffect(() => {
+    const g = graphRef.current
+    if (!g) return
+    g.links = links.map((l) => ({ ...l }))
+    ;(g.sim.force('link') as ForceLink<Node, Link>).links(g.links)
+    g.sim.alpha(0.5).restart()
+  }, [links])
+
+  // Selection change: repaint only.
+  useEffect(() => {
+    selectedRef.current = selectedKey
+    graphRef.current?.draw()
+  }, [selectedKey])
 
   const nodeAt = (ev: React.MouseEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect()

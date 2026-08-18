@@ -5,6 +5,8 @@ import {
   forceManyBody,
   forceCenter,
   forceCollide,
+  type Simulation,
+  type ForceLink,
   type SimulationNodeDatum,
   type SimulationLinkDatum,
 } from 'd3-force'
@@ -31,6 +33,13 @@ function NetworkGraph({
   const wrapRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null)
   const nodesRef = useRef<Node[]>([])
+  const graphRef = useRef<{ sim: Simulation<Node, Link>; links: Link[]; draw: () => void } | null>(
+    null,
+  )
+  // Selection and cluster colors are read through refs so a click or a k
+  // change repaints the canvas without rebuilding the force layout.
+  const selectedRef = useRef(selectedId)
+  const clustersRef = useRef(clusterOf)
 
   const matrix = useMemo(
     () => combinedSimilarityMatrix(numericZ, styles.map((s) => s.tags), alpha),
@@ -45,6 +54,9 @@ function NetworkGraph({
     return out
   }, [matrix, styles.length, threshold])
 
+  // Build the simulation once per style set. Threshold/blend changes swap
+  // links in place and selection changes only repaint, so the layout the
+  // user is looking at never regenerates under a click.
   useEffect(() => {
     const canvas = canvasRef.current
     const wrap = wrapRef.current
@@ -52,7 +64,6 @@ function NetworkGraph({
 
     const nodes: Node[] = styles.map((_, i) => ({ i, index: i }))
     nodesRef.current = nodes
-    const linkCopies: Link[] = links.map((l) => ({ ...l }))
 
     let width = wrap.clientWidth
     let height = wrap.clientHeight
@@ -71,7 +82,7 @@ function NetworkGraph({
     const sim = forceSimulation(nodes)
       .force(
         'link',
-        forceLink<Node, Link>(linkCopies)
+        forceLink<Node, Link>([])
           .distance((l) => 30 + (1 - l.w) * 160)
           .strength((l) => 0.2 + l.w * 0.6),
       )
@@ -84,7 +95,7 @@ function NetworkGraph({
       ctx.setTransform(dpr, 0, 0, dpr, (width / 2) * dpr, (height / 2) * dpr)
       ctx.clearRect(-width / 2, -height / 2, width, height)
       ctx.lineWidth = 1
-      for (const l of linkCopies) {
+      for (const l of graphRef.current?.links ?? []) {
         const s = l.source as Node
         const t = l.target as Node
         ctx.strokeStyle = `rgba(137,135,129,${(0.12 + l.w * 0.45).toFixed(2)})`
@@ -94,10 +105,10 @@ function NetworkGraph({
         ctx.stroke()
       }
       for (const n of nodes) {
-        const isSel = styles[n.i].id === selectedId
+        const isSel = styles[n.i].id === selectedRef.current
         ctx.beginPath()
         ctx.arc(n.x!, n.y!, isSel ? 8 : 5.5, 0, Math.PI * 2)
-        ctx.fillStyle = clusterColor(clusterOf[n.i] ?? 0)
+        ctx.fillStyle = clusterColor(clustersRef.current[n.i] ?? 0)
         ctx.fill()
         // 2px surface ring so overlapping nodes stay separable
         ctx.strokeStyle = '#0d0d0d'
@@ -110,6 +121,7 @@ function NetworkGraph({
         }
       }
     }
+    graphRef.current = { sim, links: [], draw }
 
     sim.on('tick', draw)
 
@@ -122,8 +134,26 @@ function NetworkGraph({
     return () => {
       sim.stop()
       ro.disconnect()
+      graphRef.current = null
     }
-  }, [styles, links, clusterOf, selectedId])
+  }, [styles])
+
+  // Swap the link set in place and gently reheat: node positions survive
+  // threshold/blend changes instead of the graph re-laying-out from scratch.
+  useEffect(() => {
+    const g = graphRef.current
+    if (!g) return
+    g.links = links.map((l) => ({ ...l }))
+    ;(g.sim.force('link') as ForceLink<Node, Link>).links(g.links)
+    g.sim.alpha(0.5).restart()
+  }, [links])
+
+  // Selection and cluster recoloring: repaint only.
+  useEffect(() => {
+    selectedRef.current = selectedId
+    clustersRef.current = clusterOf
+    graphRef.current?.draw()
+  }, [selectedId, clusterOf])
 
   const nodeAt = (ev: React.MouseEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect()
