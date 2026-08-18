@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run build:data && tsc -b && vite build",
-    "build:data": "node scripts/build-data.mjs",
+    "build:data": "node scripts/build-data.mjs && node scripts/build-hops.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc -b"

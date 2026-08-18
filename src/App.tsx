@@ -8,10 +8,12 @@ import MatrixView from './views/MatrixView'
 import CompareView from './views/CompareView'
 import RecipeView from './views/RecipeView'
 import BrowseView from './views/BrowseView'
+import HopsView from './views/HopsView'
 
 const TABS = [
   { id: 'space', label: '3D Style Space' },
   { id: 'similarity', label: 'Similarity' },
+  { id: 'hops', label: 'Hops' },
   { id: 'browse', label: 'Browse' },
   { id: 'vitals', label: 'Vital Statistics' },
   { id: 'matrix', label: 'Matrix' },
@@ -92,6 +94,7 @@ function Shell() {
       {tab === 'space' && <SpaceView />}
       {tab === 'similarity' && <SimilarityView />}
       {tab === 'browse' && <BrowseView />}
+      {tab === 'hops' && <HopsView />}
       {tab === 'vitals' && <VitalsView />}
       {tab === 'matrix' && <MatrixView />}
       {tab === 'compare' && <CompareView />}

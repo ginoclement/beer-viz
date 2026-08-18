@@ -15,6 +15,7 @@ you drop your own recipes into the same math.
 | **Vital Statistics** | ABV × IBU scatter and OG × attenuation scatter (points painted their true SRM color), and a "color ladder" of every style's published SRM range. |
 | **Matrix** | The full pairwise similarity matrix as a heatmap, rows ordered by average-linkage hierarchical clustering so families form bright blocks — plus the same clustering drawn as a dendrogram ("family tree"). |
 | **Guidelines** | Compare BJCP 2021 vs BJCP 2015 vs Brewers Association 2017: vital-statistic drift per matched style (with fuzzy name matching), styles added/removed, and both guidelines embedded into one shared PCA map. |
+| **Hops** | 210 hop varieties with merged producer chemistry: alpha/beta acids, cohumulone, total oil, oil composition (myrcene, humulene, caryophyllene, farnesene, geraniol, linalool), 9-axis sensory radar, curated thiol-potential classes, pedigree, and producer substitute lists. Includes a hop-aroma PCA map, a substitution & kinship network, and a **style↔hop pairing engine**: hops are scored for any style by (1) cosine match between the hop's measured aroma profile and the hop character mined from the style's guideline prose, (2) regional tradition, and (3) alpha-acid fit to the style's bitterness load — with the same engine run in reverse to list each hop's best-fit styles. |
 | **Browse** | Full-text search over names, categories, tags, and descriptions; tag filters; sortable columns; true-color SRM swatches. |
 | **My Recipes** | Import a **Brewfather JSON** export, a **BeerXML** file, or manual vitals. The recipe gets BJCP-vocabulary tags derived from its numbers, is projected into the current style space with the fitted PCA/UMAP transform, ranked against every style, and drawn as a diamond in the 3D view with dashed tethers to its top-3 matches. Recipes persist in localStorage; everything runs client-side and nothing is uploaded. |
 
@@ -73,3 +74,16 @@ and the Brewers Association 2017 Beer Style Guidelines (© Brewers Association).
 data glitches (gravities stored in points, placeholder ranges), and synthesizes
 BJCP-vocabulary tags for styles that ship without tags so Jaccard similarity
 works across guidelines (marked `tagsSynthesized`).
+
+Hop chemistry (`data/raw/hops/`, built by `scripts/build-hops.mjs`) merges the
+MIT-licensed [kasperg3/HopDatabase](https://github.com/kasperg3/HopDatabase)
+aggregation (Yakima Chief, Barth-Haas, Hopsteiner, Crosby published ranges and
+sensory spider charts) with numeric chemistry facts extracted from
+[almet/hops-datasets](https://github.com/almet/hops-datasets). The build
+validates every oil profile against physical envelopes (myrcene is always the
+15–85% major fraction, geraniol/linalool always trace) and auto-corrects a
+column rotation present in part of the upstream scrape; substitute lists and
+pedigree strings come from the Hopsteiner catalog. Thiol-potential classes
+(4MMP/3MH/3MHA) are hand-curated from published brewing-science literature and
+are approximate by nature — thiol content varies strongly with harvest year and
+biotransformation.
