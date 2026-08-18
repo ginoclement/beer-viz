@@ -7,6 +7,15 @@ export default defineConfig({
   plugins: [react()],
   build: {
     chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          three: ['three', '@react-three/fiber', '@react-three/drei'],
+          react: ['react', 'react-dom'],
+          data: ['./src/generated/guides.json'],
+        },
+      },
+    },
   },
   test: {
     environment: 'node',

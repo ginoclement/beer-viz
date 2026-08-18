@@ -23,10 +23,13 @@ function fitRescale(pts: number[][]): Rescale {
   const center: [number, number, number] = [0, 0, 0]
   for (const p of pts) for (let i = 0; i < 3; i++) center[i] += p[i]
   for (let i = 0; i < 3; i++) center[i] /= pts.length || 1
-  let max = 1e-9
-  for (const p of pts)
-    for (let i = 0; i < 3; i++) max = Math.max(max, Math.abs(p[i] - center[i]))
-  return { center, scale: 1 / max }
+  // robust scale: 97.5th-percentile deviation, so a stray outlier can't
+  // compress the whole cloud into the middle of the view
+  const devs = pts
+    .map((p) => Math.max(...[0, 1, 2].map((i) => Math.abs(p[i] - center[i]))))
+    .sort((a, b) => a - b)
+  const q = devs[Math.min(devs.length - 1, Math.floor(devs.length * 0.975))] || 1e-9
+  return { center, scale: 1 / q }
 }
 
 const applyRescale = (r: Rescale, p: number[]): [number, number, number] => [

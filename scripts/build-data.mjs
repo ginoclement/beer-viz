@@ -30,14 +30,41 @@ function cleanTags(raw) {
   return [...out]
 }
 
-function range(field) {
-  const min = field?.minimum?.value
-  const max = field?.maximum?.value
+function range(field, kind) {
+  let min = field?.minimum?.value
+  let max = field?.maximum?.value
   if (typeof min !== 'number' || typeof max !== 'number') return null
+  if (kind === 'gravity') {
+    // the source data stores a few gravities in points (1060 for 1.060)
+    if (min > 2) min /= 1000
+    if (max > 2) max /= 1000
+  }
   return [min, max]
 }
 
 const mid = (r) => (r ? (r[0] + r[1]) / 2 : null)
+
+/**
+ * The BA file encodes "varies with underlying style" as absurd catch-all
+ * ranges (OG 1–1.12, ABV 0–25, IBU 0–100, SRM 0–50, FG 0.095–1.06).
+ * Treat those as absent. When only FG is junk but OG and ABV are real
+ * (e.g. Eisbock), estimate FG from the standard ABV formula.
+ */
+function sanitizeStats(stats) {
+  const s = { ...stats }
+  if (s.og && (s.og[0] <= 1.0 || (s.og[0] <= 1.005 && s.og[1] >= 1.1))) s.og = null
+  if (s.fg && (s.fg[0] < 0.98 || (s.og && s.fg[1] > s.og[1]))) s.fg = null
+  if (s.abv && s.abv[0] <= 0 && s.abv[1] >= 20) s.abv = null
+  if (s.ibu && s.ibu[0] <= 0 && s.ibu[1] >= 95) s.ibu = null
+  if (s.srm && s.srm[0] <= 0 && s.srm[1] >= 50) s.srm = null
+  if (!s.fg && s.og && s.abv) {
+    s.fg = [
+      Math.round((s.og[0] - s.abv[0] / 131.25) * 1000) / 1000,
+      Math.round((s.og[1] - s.abv[1] / 131.25) * 1000) / 1000,
+    ].sort((a, b) => a - b)
+  }
+  return s
+}
 
 // Synthesized tags follow the BJCP tag conventions so Jaccard comparisons
 // across guidelines operate on one vocabulary.
@@ -102,13 +129,13 @@ const slug = (s) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
 function normalize(style, guide, index) {
-  const stats = {
-    og: range(style.original_gravity),
-    fg: range(style.final_gravity),
+  const stats = sanitizeStats({
+    og: range(style.original_gravity, 'gravity'),
+    fg: range(style.final_gravity, 'gravity'),
     abv: range(style.alcohol_by_volume),
     ibu: range(style.international_bitterness_units),
     srm: range(style.color),
-  }
+  })
   const hasStats = Boolean(stats.og && stats.fg && stats.abv && stats.ibu && stats.srm)
 
   let tags = cleanTags(style.tags)
