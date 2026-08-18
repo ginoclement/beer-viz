@@ -786,7 +786,9 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
   )
 }
 
-export default function HopsView() {
+export type HopsPage = 'pairing' | 'aroma' | 'network'
+
+export default function HopsView({ page = 'pairing' }: { page?: HopsPage }) {
   const { setSelectedId, hopKey, setHopKey } = useAnalysis()
   const hop = HOPS.find((h) => h.key === hopKey) ?? HOPS[0]
 
@@ -810,9 +812,9 @@ export default function HopsView() {
           </span>
         </div>
         <div className="charts">
-          <PairingCard onPickHop={setHopKey} />
-          <AromaScatter selectedKey={hop.key} onPickHop={setHopKey} />
-          <HopNetwork selectedKey={hop.key} onPickHop={setHopKey} />
+          {page === 'pairing' && <PairingCard onPickHop={setHopKey} />}
+          {page === 'aroma' && <AromaScatter selectedKey={hop.key} onPickHop={setHopKey} />}
+          {page === 'network' && <HopNetwork selectedKey={hop.key} onPickHop={setHopKey} />}
         </div>
       </div>
       <aside className="sidebar">

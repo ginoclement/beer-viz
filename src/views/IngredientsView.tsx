@@ -464,7 +464,9 @@ function CorpusRecipeDetail({
 
 // ------------------------------------------------------------------ the view
 
-export default function IngredientsView({ goToHops }: { goToHops?: () => void }) {
+export type IngredientsPage = 'usage' | 'grist' | 'outcome'
+
+export default function IngredientsView({ page = 'usage', goToHops }: { page?: IngredientsPage; goToHops?: () => void }) {
   const { setHopKey } = useAnalysis()
   const [family, setFamily] = useState<string>('all')
   const [selectedRecipe, setSelectedRecipe] = useState<number | null>(null)
@@ -507,9 +509,11 @@ export default function IngredientsView({ goToHops }: { goToHops?: () => void })
           </span>
         </div>
         <div className="charts">
-          <HopLeaderboard recipes={recipes} onPickHop={pickHop} />
-          <OutcomeScatter recipes={recipes} selected={selectedRecipe} onSelect={setSelectedRecipe} />
-          <GristByFamily recipes={recipes} />
+          {page === 'usage' && <HopLeaderboard recipes={recipes} onPickHop={pickHop} />}
+          {page === 'outcome' && (
+            <OutcomeScatter recipes={recipes} selected={selectedRecipe} onSelect={setSelectedRecipe} />
+          )}
+          {page === 'grist' && <GristByFamily recipes={recipes} />}
         </div>
       </div>
       <aside className="sidebar">

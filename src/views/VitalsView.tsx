@@ -381,7 +381,9 @@ function AttenuationChart() {
   )
 }
 
-export default function VitalsView({ goToSpace }: { goToSpace?: () => void }) {
+export type VitalsPage = 'strength' | 'ferment' | 'color'
+
+export default function VitalsView({ page = 'strength', goToSpace }: { page?: VitalsPage; goToSpace?: () => void }) {
   const { selectedId, allStyles, setSelectedId } = useAnalysis()
   const selected: BeerStyle | undefined = allStyles.find((s) => s.id === selectedId)
   return (
@@ -409,9 +411,9 @@ export default function VitalsView({ goToSpace }: { goToSpace?: () => void }) {
               </button>
             </div>
           )}
-          <Scatter />
-          <AttenuationChart />
-          <SrmLadder />
+          {page === 'strength' && <Scatter />}
+          {page === 'ferment' && <AttenuationChart />}
+          {page === 'color' && <SrmLadder />}
         </div>
       </div>
     </div>

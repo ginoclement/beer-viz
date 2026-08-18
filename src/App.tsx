@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnalysisProvider, GUIDES, useAnalysis } from './state/useAnalysis'
 import type { GuideId } from './lib/types'
 import SpaceView from './views/SpaceView'
@@ -11,27 +11,82 @@ import BrowseView from './views/BrowseView'
 import HopsView from './views/HopsView'
 import IngredientsView from './views/IngredientsView'
 
-const TABS = [
-  { id: 'space', label: '3D Style Space' },
-  { id: 'similarity', label: 'Similarity' },
-  { id: 'hops', label: 'Hops' },
-  { id: 'ingredients', label: 'Ingredients' },
-  { id: 'browse', label: 'Browse' },
-  { id: 'vitals', label: 'Vital Statistics' },
-  { id: 'matrix', label: 'Matrix' },
-  { id: 'compare', label: 'Guidelines' },
-  { id: 'recipes', label: 'My Recipes' },
+/**
+ * Two-level navigation: each visualization is its own page, and pages are
+ * organized into groups. The header shows the group tabs; a sub-nav below
+ * lists the pages of the active group. One graphic per page.
+ */
+const NAV = [
+  {
+    group: 'Style Space',
+    pages: [
+      { id: 'space', label: '3D Space' },
+      { id: 'similarity', label: 'Similarity Network' },
+      { id: 'matrix', label: 'Similarity Matrix' },
+      { id: 'tree', label: 'Family Tree' },
+    ],
+  },
+  {
+    group: 'Vitals',
+    pages: [
+      { id: 'vitals-strength', label: 'Bitterness × Strength' },
+      { id: 'vitals-ferment', label: 'Fermentability' },
+      { id: 'vitals-color', label: 'Color Ladder' },
+    ],
+  },
+  {
+    group: 'Hops',
+    pages: [
+      { id: 'hops-pairing', label: 'Style Pairing' },
+      { id: 'hops-aroma', label: 'Aroma Map' },
+      { id: 'hops-network', label: 'Kinship Network' },
+    ],
+  },
+  {
+    group: 'Ingredients',
+    pages: [
+      { id: 'ing-usage', label: 'Hop Usage' },
+      { id: 'ing-grist', label: 'Grist by Family' },
+      { id: 'ing-outcome', label: 'Ingredients → Outcome' },
+    ],
+  },
+  {
+    group: 'Guidelines',
+    pages: [
+      { id: 'compare-map', label: 'Overlay Map' },
+      { id: 'compare-drift', label: 'Drift Table' },
+    ],
+  },
+  {
+    group: 'Explore',
+    pages: [
+      { id: 'browse', label: 'Browse Styles' },
+      { id: 'recipes', label: 'My Recipes' },
+    ],
+  },
 ] as const
 
-type TabId = (typeof TABS)[number]['id']
+type PageId = (typeof NAV)[number]['pages'][number]['id']
 
-const isTab = (t: string): t is TabId => TABS.some((x) => x.id === t)
+const PAGE_IDS = NAV.flatMap((g) => g.pages.map((p) => p.id)) as PageId[]
+const isPage = (t: string): t is PageId => (PAGE_IDS as string[]).includes(t)
+const groupOf = (page: PageId) => NAV.find((g) => g.pages.some((p) => p.id === page))!.group
 
-/** #tab/guideId/styleId — shareable app state in the URL hash. */
-function parseHash(): { tab?: TabId; guide?: GuideId; styleId?: string } {
+/** Old single-tab hashes → their new page id, so existing links still work. */
+const LEGACY: Record<string, PageId> = {
+  hops: 'hops-pairing',
+  ingredients: 'ing-usage',
+  vitals: 'vitals-strength',
+  compare: 'compare-map',
+}
+
+/** #page/guideId/styleId — shareable app state in the URL hash. */
+function parseHash(): { page?: PageId; guide?: GuideId; styleId?: string } {
   const parts = decodeURIComponent(window.location.hash.replace(/^#\/?/, '')).split('/')
-  const out: { tab?: TabId; guide?: GuideId; styleId?: string } = {}
-  if (parts[0] && isTab(parts[0])) out.tab = parts[0]
+  const out: { page?: PageId; guide?: GuideId; styleId?: string } = {}
+  const first = parts[0]
+  if (first && isPage(first)) out.page = first
+  else if (first && LEGACY[first]) out.page = LEGACY[first]
   if (parts[1] && GUIDES.some((g) => g.guide === parts[1])) out.guide = parts[1] as GuideId
   if (parts[2]) out.styleId = parts[2]
   return out
@@ -39,8 +94,14 @@ function parseHash(): { tab?: TabId; guide?: GuideId; styleId?: string } {
 
 function Shell() {
   const initial = useRef(parseHash())
-  const [tab, setTab] = useState<TabId>(initial.current.tab ?? 'space')
+  const [page, setPage] = useState<PageId>(initial.current.page ?? 'space')
   const { guideId, setGuideId, recipes, selectedId, setSelectedId } = useAnalysis()
+
+  const activeGroup = groupOf(page)
+  // remember the last page visited within each group so switching groups
+  // returns you to where you were, not always the first page
+  const lastByGroup = useRef<Record<string, PageId>>({})
+  lastByGroup.current[activeGroup] = page
 
   // apply guide/style from the URL once on mount
   useEffect(() => {
@@ -50,58 +111,84 @@ function Shell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // keep the hash in sync so any view is linkable
+  // keep the hash in sync so any page is linkable
   useEffect(() => {
-    const next = `#${tab}/${guideId}${selectedId ? `/${encodeURIComponent(selectedId)}` : ''}`
+    const next = `#${page}/${guideId}${selectedId ? `/${encodeURIComponent(selectedId)}` : ''}`
     if (window.location.hash !== next) window.history.replaceState(null, '', next)
-  }, [tab, guideId, selectedId])
+  }, [page, guideId, selectedId])
+
+  const subPages = useMemo(() => NAV.find((g) => g.group === activeGroup)!.pages, [activeGroup])
+
+  const goToPage = (p: PageId) => setPage(p)
 
   return (
     <div className="app">
       <header className="header">
-        <h1>
-          <span className="mug" aria-hidden>
-            🍺
-          </span>
-          Beer Style Space
-        </h1>
-        <nav className="tabs" aria-label="Views">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              className={tab === t.id ? 'active' : ''}
-              onClick={() => setTab(t.id)}
+        <div className="header-top">
+          <h1>
+            <span className="mug" aria-hidden>
+              🍺
+            </span>
+            Beer Style Space
+          </h1>
+          <nav className="tabs" aria-label="Sections">
+            {NAV.map((g) => (
+              <button
+                key={g.group}
+                className={g.group === activeGroup ? 'active' : ''}
+                onClick={() => setPage(lastByGroup.current[g.group] ?? g.pages[0].id)}
+              >
+                {g.group}
+              </button>
+            ))}
+          </nav>
+          <div className="guide-picker">
+            <span>Guideline</span>
+            <select
+              value={guideId}
+              onChange={(e) => setGuideId(e.target.value as GuideId)}
+              aria-label="Style guideline"
             >
-              {t.label}
-              {t.id === 'recipes' && recipes.length > 0 ? ` (${recipes.length})` : ''}
+              {GUIDES.map((g) => (
+                <option key={g.guide} value={g.guide}>
+                  {g.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <nav className="subtabs" aria-label={`${activeGroup} pages`}>
+          {subPages.map((p) => (
+            <button key={p.id} className={page === p.id ? 'active' : ''} onClick={() => setPage(p.id)}>
+              {p.label}
+              {p.id === 'recipes' && recipes.length > 0 ? ` (${recipes.length})` : ''}
             </button>
           ))}
         </nav>
-        <div className="guide-picker">
-          <span>Guideline</span>
-          <select
-            value={guideId}
-            onChange={(e) => setGuideId(e.target.value as GuideId)}
-            aria-label="Style guideline"
-          >
-            {GUIDES.map((g) => (
-              <option key={g.guide} value={g.guide}>
-                {g.label}
-              </option>
-            ))}
-          </select>
-        </div>
       </header>
 
-      {tab === 'space' && <SpaceView />}
-      {tab === 'similarity' && <SimilarityView goToSpace={() => setTab('space')} />}
-      {tab === 'browse' && <BrowseView goToSpace={() => setTab('space')} />}
-      {tab === 'hops' && <HopsView />}
-      {tab === 'ingredients' && <IngredientsView goToHops={() => setTab('hops')} />}
-      {tab === 'vitals' && <VitalsView goToSpace={() => setTab('space')} />}
-      {tab === 'matrix' && <MatrixView goToSpace={() => setTab('space')} />}
-      {tab === 'compare' && <CompareView />}
-      {tab === 'recipes' && <RecipeView goToSpace={() => setTab('space')} />}
+      {page === 'space' && <SpaceView />}
+      {page === 'similarity' && <SimilarityView goToSpace={() => goToPage('space')} />}
+      {page === 'matrix' && <MatrixView page="matrix" goToSpace={() => goToPage('space')} />}
+      {page === 'tree' && <MatrixView page="tree" goToSpace={() => goToPage('space')} />}
+
+      {page === 'vitals-strength' && <VitalsView page="strength" goToSpace={() => goToPage('space')} />}
+      {page === 'vitals-ferment' && <VitalsView page="ferment" goToSpace={() => goToPage('space')} />}
+      {page === 'vitals-color' && <VitalsView page="color" goToSpace={() => goToPage('space')} />}
+
+      {page === 'hops-pairing' && <HopsView page="pairing" />}
+      {page === 'hops-aroma' && <HopsView page="aroma" />}
+      {page === 'hops-network' && <HopsView page="network" />}
+
+      {page === 'ing-usage' && <IngredientsView page="usage" goToHops={() => goToPage('hops-pairing')} />}
+      {page === 'ing-grist' && <IngredientsView page="grist" goToHops={() => goToPage('hops-pairing')} />}
+      {page === 'ing-outcome' && <IngredientsView page="outcome" goToHops={() => goToPage('hops-pairing')} />}
+
+      {page === 'compare-map' && <CompareView page="map" />}
+      {page === 'compare-drift' && <CompareView page="drift" />}
+
+      {page === 'browse' && <BrowseView goToSpace={() => goToPage('space')} />}
+      {page === 'recipes' && <RecipeView goToSpace={() => goToPage('space')} />}
 
       <footer className="foot">
         Style data: BJCP 2021 &amp; 2015 Beer Style Guidelines (© Beer Judge Certification

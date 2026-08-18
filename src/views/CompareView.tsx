@@ -188,7 +188,9 @@ function OverlayScatter({ guideA, guideB }: { guideA: GuideId; guideB: GuideId }
   )
 }
 
-export default function CompareView() {
+export type ComparePage = 'map' | 'drift'
+
+export default function CompareView({ page = 'map' }: { page?: ComparePage }) {
   const tableCard = useCardExpand()
   const [guideA, setGuideA] = useState<GuideId>('bjcp2015')
   const [guideB, setGuideB] = useState<GuideId>('bjcp2021')
@@ -236,23 +238,26 @@ export default function CompareView() {
               ))}
             </select>
           </label>
-          <span className="seg">
-            {(
-              [
-                ['changed', `Changed (${changed.length})`],
-                ['all', `All matched (${matches.length})`],
-                ['added', `Only in ${gb.label} (${onlyB.length})`],
-                ['removed', `Only in ${ga.label} (${onlyA.length})`],
-              ] as const
-            ).map(([key, lbl]) => (
-              <button key={key} className={show === key ? 'active' : ''} onClick={() => setShow(key)}>
-                {lbl}
-              </button>
-            ))}
-          </span>
+          {page === 'drift' && (
+            <span className="seg">
+              {(
+                [
+                  ['changed', `Changed (${changed.length})`],
+                  ['all', `All matched (${matches.length})`],
+                  ['added', `Only in ${gb.label} (${onlyB.length})`],
+                  ['removed', `Only in ${ga.label} (${onlyA.length})`],
+                ] as const
+              ).map(([key, lbl]) => (
+                <button key={key} className={show === key ? 'active' : ''} onClick={() => setShow(key)}>
+                  {lbl}
+                </button>
+              ))}
+            </span>
+          )}
         </div>
         <div className="charts">
-          <OverlayScatter guideA={guideA} guideB={guideB} />
+          {page === 'map' && <OverlayScatter guideA={guideA} guideB={guideB} />}
+          {page === 'drift' && (
           <div className={`chart-card${tableCard.cardClass}`}>
             <div className="cardtools">
               <ChartHelp title="Reading the drift table">
@@ -359,6 +364,7 @@ export default function CompareView() {
               </>
             )}
           </div>
+          )}
         </div>
       </div>
     </div>

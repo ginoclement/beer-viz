@@ -85,7 +85,9 @@ function Dendrogram({
   )
 }
 
-export default function MatrixView({ goToSpace }: { goToSpace?: () => void }) {
+export type MatrixPage = 'matrix' | 'tree'
+
+export default function MatrixView({ page = 'matrix', goToSpace }: { page?: MatrixPage; goToSpace?: () => void }) {
   const { styles, numericZ, clusterOf, alpha, setAlpha, setSelectedId, allStyles, selectedId } =
     useAnalysis()
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -167,6 +169,7 @@ export default function MatrixView({ goToSpace }: { goToSpace?: () => void }) {
           </span>
         </div>
         <div className="charts" style={{ position: 'relative' }}>
+          {page === 'matrix' && (
           <div className="chart-card" style={{ display: 'inline-block' }}>
             <div className="cardtools">
               <ChartHelp title="Reading the similarity matrix">
@@ -229,8 +232,9 @@ export default function MatrixView({ goToSpace }: { goToSpace?: () => void }) {
               0% → 100% similar
             </p>
           </div>
-          {tree && (
-            <div className="chart-card" style={{ display: 'inline-block', verticalAlign: 'top', marginLeft: 20 }}>
+          )}
+          {page === 'tree' && tree && (
+            <div className="chart-card" style={{ display: 'inline-block', verticalAlign: 'top' }}>
               <div className="cardtools">
                 <ChartHelp title="Reading the family tree">
                   <p>
