@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -70,15 +71,53 @@ function numericZSpace(styles: BeerStyle[]) {
   return { vectors: rows.map(z), transform: (v: Vitals) => z(numericFeatures(v)) }
 }
 
+const RECIPES_KEY = 'beer-viz.recipes'
+const GUIDE_KEY = 'beer-viz.guide'
+
+function loadStoredRecipes(): Recipe[] {
+  try {
+    const raw = localStorage.getItem(RECIPES_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (r): r is Recipe =>
+        r && typeof r.name === 'string' && r.vitals && typeof r.vitals.og === 'number',
+    )
+  } catch {
+    return []
+  }
+}
+
+function loadStoredGuide(): GuideId {
+  const g = typeof localStorage !== 'undefined' ? localStorage.getItem(GUIDE_KEY) : null
+  return GUIDES.some((x) => x.guide === g) ? (g as GuideId) : 'bjcp2021'
+}
+
 export function AnalysisProvider({ children }: { children: ReactNode }) {
-  const [guideId, setGuideId] = useState<GuideId>('bjcp2021')
+  const [guideId, setGuideId] = useState<GuideId>(loadStoredGuide)
   const [method, setMethod] = useState<ProjectionMethod>('pca')
   const [tagWeight, setTagWeight] = useState(0.35)
   const [k, setK] = useState(6)
   const [colorBy, setColorBy] = useState<ColorBy>('cluster')
   const [alpha, setAlpha] = useState(0.5)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [recipes, setRecipes] = useState<Recipe[]>([])
+  const [recipes, setRecipes] = useState<Recipe[]>(loadStoredRecipes)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RECIPES_KEY, JSON.stringify(recipes))
+    } catch {
+      // storage full or unavailable — imports still work for the session
+    }
+  }, [recipes])
+  useEffect(() => {
+    try {
+      localStorage.setItem(GUIDE_KEY, guideId)
+    } catch {
+      // ignore
+    }
+  }, [guideId])
 
   const guide = useMemo(() => GUIDES.find((g) => g.guide === guideId)!, [guideId])
   const allStyles = guide.styles
