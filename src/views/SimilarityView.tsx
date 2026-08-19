@@ -28,11 +28,9 @@ type Link = SimulationLinkDatum<Node> & { w: number }
 
 function NetworkGraph({
   threshold,
-  showLabels,
   onPick,
 }: {
   threshold: number
-  showLabels: boolean
   onPick: (id: string) => void
 }) {
   const { styles, numericZ, clusterOf, clusterNames, alpha, selectedId } = useAnalysis()
@@ -47,7 +45,6 @@ function NetworkGraph({
   // change repaints the canvas without rebuilding the force layout.
   const selectedRef = useRef(selectedId)
   const clustersRef = useRef(clusterOf)
-  const labelsRef = useRef(showLabels)
   const viewRef = useRef(identityView())
   const interactedRef = useRef(false)
   const draggedRef = useRef<() => boolean>(() => false)
@@ -147,14 +144,31 @@ function NetworkGraph({
           ctx.stroke()
         }
       }
-      // name every node when the labels toggle is on, or when zoomed in
-      if (labelsRef.current || view.k >= 1.8) {
+      // Label the focused style and the styles it links to, always; reveal
+      // every name only when zoomed in. Naming all ~130 overlapping nodes at
+      // once is unreadable — the mistake the on/off toggle used to make — so
+      // the default view stays legible and names track what you're inspecting.
+      const sel = selectedRef.current
+      const near = new Set<number>()
+      if (sel != null) {
+        for (const l of graphRef.current?.links ?? []) {
+          const s = l.source as Node
+          const t = l.target as Node
+          if (styles[s.i].id === sel) near.add(t.i)
+          if (styles[t.i].id === sel) near.add(s.i)
+        }
+      }
+      const labelAll = view.k >= 1.8
+      if (labelAll || sel != null) {
         ctx.font = `600 ${11.5 / view.k}px system-ui, sans-serif`
         ctx.textBaseline = 'middle'
         ctx.fillStyle = '#e8e6df'
         ctx.shadowColor = '#0d0d0d'
         ctx.shadowBlur = 3 / view.k
-        for (const n of nodes) ctx.fillText(styles[n.i].name, n.x! + 9, n.y!)
+        for (const n of nodes) {
+          if (labelAll || styles[n.i].id === sel || near.has(n.i))
+            ctx.fillText(styles[n.i].name, n.x! + 9, n.y!)
+        }
         ctx.shadowBlur = 0
       }
     }
@@ -214,13 +228,12 @@ function NetworkGraph({
     g.settle()
   }, [links])
 
-  // Selection, cluster recoloring, and the labels toggle: repaint only.
+  // Selection and cluster recoloring: repaint only (positions never move).
   useEffect(() => {
     selectedRef.current = selectedId
     clustersRef.current = clusterOf
-    labelsRef.current = showLabels
     graphRef.current?.draw()
-  }, [selectedId, clusterOf, showLabels])
+  }, [selectedId, clusterOf])
 
   const nodeAt = (ev: React.MouseEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect()
@@ -273,9 +286,10 @@ function NetworkGraph({
           </p>
           <h3>Interactions</h3>
           <p>
-            Click a node to inspect it and re-rank its neighbors in the table. Scroll to
-            zoom (style names appear), drag to pan, double-click to reset. Lower the
-            threshold to reveal weaker relationships; raise it to keep only near-twins.
+            Click a node to inspect it: its name and the names of the styles it links to
+            appear, and its neighbors re-rank in the table. Scroll to zoom (every name
+            appears), drag to pan, double-click to reset. Lower the threshold to reveal
+            weaker relationships; raise it to keep only near-twins.
           </p>
         </ChartHelp>
       </div>
@@ -307,8 +321,8 @@ function NetworkGraph({
           Links join styles above the similarity threshold; node color = k-means cluster.
         </div>
         <div className="note">
-          Click a node to inspect and re-rank neighbors. Scroll to zoom (names appear),
-          drag to pan, double-click to reset.
+          Click a node to name it and its neighbors and re-rank them. Scroll to zoom for
+          all names, drag to pan, double-click to reset.
         </div>
       </div>
     </div>
@@ -328,7 +342,6 @@ export default function SimilarityView({ goToSpace }: { goToSpace?: () => void }
   } = useAnalysis()
   const [threshold, setThreshold] = useState(0.78)
   const [rankBy, setRankBy] = useState<'blend' | 'flavor'>('blend')
-  const [showLabels, setShowLabels] = useState(false)
 
   const focus = allStyles.find((s) => s.id === selectedId) ?? styles[0]
   const focusStatsIndex = styles.findIndex((s) => s.id === focus?.id)
@@ -438,10 +451,6 @@ export default function SimilarityView({ goToSpace }: { goToSpace?: () => void }
             />
             <span className="val">{threshold.toFixed(2)}</span>
           </label>
-          <label className="ctl">
-            <input type="checkbox" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} />
-            Labels
-          </label>
         </div>
         <div className="simgrid">
           <div className="simlist">
@@ -502,7 +511,7 @@ export default function SimilarityView({ goToSpace }: { goToSpace?: () => void }
               </p>
             )}
           </div>
-          <NetworkGraph threshold={threshold} showLabels={showLabels} onPick={setSelectedId} />
+          <NetworkGraph threshold={threshold} onPick={setSelectedId} />
         </div>
       </div>
       <SidePanel>

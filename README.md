@@ -123,6 +123,43 @@ offline); it prints what it extracted and flags anything the live markup
 breaks. Parsers live in `scripts/lib/brewersfriend.mjs` with tests in
 `tests/brewersfriend.test.ts`.
 
+**Recipe corpus at scale (DuckDB)**: the full crawl is expected to reach
+several GB — far too much to ship to the browser, and the visualizations only
+ever need *aggregates* (malt usage, hop pairings, grist by family, per-family
+outcome envelopes), which are OLAP roll-ups. `scripts/build-corpus.mjs` runs
+those in [DuckDB](https://duckdb.org), an embedded columnar engine — no server,
+no container, nothing for the deployed site to talk to. It is a build step, the
+same kind `build-recipes.mjs` already is:
+
+```
+recipes.json  (GBs, local)  --DuckDB rollups-->  aggregates.json  (small, shipped)
+```
+
+```
+npm install            # @duckdb/node-api is an optionalDependency — plain installs and the Vercel build never touch it
+npm run build:data     # normalize the corpus first
+npm run build:corpus   # -> data/corpus.duckdb  +  src/generated/aggregates.json
+```
+
+`read_json` streams the corpus, so the same pipeline scales from the 415-recipe
+DIY Dog seed to the full crawl unchanged. The star schema and roll-up views live
+in `scripts/duckdb/schema.sql` (`recipes`, `recipe_malts`, `recipe_hops`, plus
+`malts`/`hops` dimensions and `v_malt_usage`, `v_grist_by_family`, `v_hop_usage`,
+`v_hop_pairs`, `v_family_outcomes`, `v_origins`). The `data/corpus.duckdb` file
+is a durable local database (git-ignored) you can also query by hand:
+
+```
+duckdb data/corpus.duckdb "SELECT * FROM v_hop_pairs LIMIT 20"
+```
+
+The build never runs on Vercel and Vercel never sees the corpus: production is
+purely static — every chart reads precomputed JSON. If live queries over the
+full corpus are ever wanted from the deployed app, the natural next step is
+[MotherDuck](https://motherduck.com) (hosted DuckDB with an HTTP API) behind a
+serverless function, or shipping a slimmed read-only `.duckdb`/Parquet subset to
+query in-browser with `@duckdb/duckdb-wasm` — neither is needed for the
+precompute-and-ship model above.
+
 Hop chemistry (`data/raw/hops/`, built by `scripts/build-hops.mjs`) merges the
 MIT-licensed [kasperg3/HopDatabase](https://github.com/kasperg3/HopDatabase)
 aggregation (Yakima Chief, Barth-Haas, Hopsteiner, Crosby published ranges and

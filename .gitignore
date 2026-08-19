@@ -7,3 +7,7 @@ src/generated
 # crawled/synced recipe data (personal or permission-gated; never committed)
 data/brewersfriend
 data/brewfather
+
+# local DuckDB corpus database built by scripts/build-corpus.mjs (can be GBs)
+*.duckdb
+*.duckdb.wal

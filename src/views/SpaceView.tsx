@@ -19,10 +19,45 @@ interface Hover {
   kind: 'style' | 'recipe'
 }
 
+// A screen-space name tag anchored to a 3D point. Rendered as a DOM overlay
+// (drei Html) rather than WebGL text: it needs no font file and makes no
+// network request, so it works the same in every deploy environment — unlike
+// troika/<Text>, which fetches a default font from a CDN and blanks the scene
+// when that fetch is blocked. Labels are an opt-in toggle, so the DOM cost of a
+// tag per point is only paid when the user asks for names.
+function PointLabel({
+  position,
+  text,
+  color = '#e8e6df',
+}: {
+  position: [number, number, number]
+  text: string
+  color?: string
+}) {
+  return (
+    <Html position={position} style={{ pointerEvents: 'none' }} zIndexRange={[1, 0]}>
+      <div
+        style={{
+          transform: 'translate(9px, -50%)',
+          whiteSpace: 'nowrap',
+          color,
+          fontSize: 11,
+          fontWeight: 600,
+          textShadow: '0 1px 3px #0d0d0d, 0 0 2px #0d0d0d',
+        }}
+      >
+        {text}
+      </div>
+    </Html>
+  )
+}
+
 function StylePoints({
+  showLabels,
   onHover,
   onSelect,
 }: {
+  showLabels: boolean
   onHover: (h: Hover | null) => void
   onSelect: (id: string) => void
 }) {
@@ -104,12 +139,25 @@ function StylePoints({
           </Html>
         </group>
       )}
+      {showLabels &&
+        styles.map((s, i) =>
+          i === selectedIndex ? null : (
+            <PointLabel key={s.id} position={projection.points[i]} text={s.name} />
+          ),
+        )}
     </group>
   )
 }
 
-function RecipePoints({ onHover }: { onHover: (h: Hover | null) => void }) {
-  const { recipePoints, styles, numericZ, numericTransform, alpha, projection } = useAnalysis()
+function RecipePoints({
+  showLabels,
+  onHover,
+}: {
+  showLabels: boolean
+  onHover: (h: Hover | null) => void
+}) {
+  const { recipePoints, styles, numericZ, numericTransform, alpha, projection, colorBy } =
+    useAnalysis()
 
   // faint tethers from each recipe to its top-3 matched styles
   const tethers = useMemo(() => {
@@ -149,7 +197,13 @@ function RecipePoints({ onHover }: { onHover: (h: Hover | null) => void }) {
           ))}
         </group>
       ))}
-      {recipePoints.map((rp, i) => (
+      {recipePoints.map((rp, i) => {
+        // In "Beer color" mode a recipe wears its actual SRM, matching the
+        // style points; otherwise it stays the neutral recipe marker so the
+        // ◆ imports read as a distinct overlay on the clustered field.
+        const srm = rp.recipe.vitals.srm
+        const color = colorBy === 'srm' && srm != null ? srmToHex(srm) : RECIPE_COLOR
+        return (
         <group key={i} position={rp.position}>
           <mesh
             onPointerMove={(e) => {
@@ -160,28 +214,31 @@ function RecipePoints({ onHover }: { onHover: (h: Hover | null) => void }) {
           >
             <octahedronGeometry args={[0.05]} />
             <meshStandardMaterial
-              color={RECIPE_COLOR}
-              emissive={RECIPE_COLOR}
-              emissiveIntensity={0.35}
+              color={color}
+              emissive={color}
+              emissiveIntensity={colorBy === 'srm' ? 0.22 : 0.35}
               roughness={0.3}
             />
           </mesh>
-          <Html
-            position={[0, 0.085, 0]}
-            center
-            style={{
-              color: '#fff',
-              fontSize: 12,
-              fontWeight: 650,
-              whiteSpace: 'nowrap',
-              textShadow: '0 1px 4px #000',
-              pointerEvents: 'none',
-            }}
-          >
-            ◆ {rp.recipe.name}
-          </Html>
+          {showLabels && (
+            <Html
+              position={[0, 0.085, 0]}
+              center
+              style={{
+                color: '#fff',
+                fontSize: 12,
+                fontWeight: 650,
+                whiteSpace: 'nowrap',
+                textShadow: '0 1px 4px #000',
+                pointerEvents: 'none',
+              }}
+            >
+              ◆ {rp.recipe.name}
+            </Html>
+          )}
         </group>
-      ))}
+        )
+      })}
     </group>
   )
 }
@@ -346,6 +403,7 @@ export default function SpaceView() {
     allStyles,
   } = useAnalysis()
   const [hover, setHover] = useState<Hover | null>(null)
+  const [showLabels, setShowLabels] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
   const selected = allStyles.find((s) => s.id === selectedId) ?? null
@@ -416,6 +474,14 @@ export default function SpaceView() {
             />
             <span className="val">{tagWeight.toFixed(2)}</span>
           </label>
+          <label className="ctl" title="Show every point's name, not just the selected one">
+            <input
+              type="checkbox"
+              checked={showLabels}
+              onChange={(e) => setShowLabels(e.target.checked)}
+            />
+            Names
+          </label>
         </div>
         <div className="canvas-wrap" ref={wrapRef}>
           <div className="cardtools">
@@ -464,8 +530,8 @@ export default function SpaceView() {
             <directionalLight position={[-4, -2, -3]} intensity={0.35} />
             <CameraRig />
             <Axes />
-            <StylePoints onHover={setHover} onSelect={onSelect} />
-            <RecipePoints onHover={setHover} />
+            <StylePoints showLabels={showLabels} onHover={setHover} onSelect={onSelect} />
+            <RecipePoints showLabels={showLabels} onHover={setHover} />
             <OrbitControls enableDamping dampingFactor={0.12} makeDefault />
           </Canvas>
           {hover && (
