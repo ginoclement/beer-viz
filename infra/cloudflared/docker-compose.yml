@@ -1,0 +1,29 @@
+# Cloudflare Tunnel — the single public entry point for *.ginoclement.com APIs.
+# Joins the shared external "apis" network so it can reach each app container by
+# service name (e.g. http://beer-api:8080).
+#
+# Setup (one time, using a locally-managed tunnel):
+#   cloudflared tunnel login
+#   cloudflared tunnel create apis                 # note the Tunnel ID + creds path
+#   cp ~/.cloudflared/<TUNNEL_ID>.json ./creds.json
+#   # put the Tunnel ID into config.yml
+#   # DNS: add a proxied CNAME  apis.ginoclement.com -> <TUNNEL_ID>.cfargotunnel.com
+#   #   (cloudflared tunnel route dns apis apis.ginoclement.com)
+#   docker network create apis                     # if not created yet
+#   docker compose up -d
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./config.yml:/etc/cloudflared/config.yml:ro
+      - ./creds.json:/etc/cloudflared/creds.json:ro
+    networks:
+      - apis
+
+networks:
+  apis:
+    external: true

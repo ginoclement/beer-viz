@@ -16,3 +16,6 @@ data/brewfather
 *.duckdb
 *.duckdb.wal
 data/corpus-aggregates.json
+
+# beer-api build artifacts (the query DB is rebuilt from src/generated)
+apps/beer-api/data/

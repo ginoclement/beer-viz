@@ -1,0 +1,17 @@
+{
+  "name": "beer-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only query API over the beer recipe corpus (DuckDB), for the per-recipe views at scale.",
+  "scripts": {
+    "build:db": "node build-db.mjs",
+    "start": "node server.mjs",
+    "dev": "node server.mjs"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "^1.5.5-r.4",
+    "@fastify/cors": "^10.0.1",
+    "fastify": "^5.1.0"
+  }
+}

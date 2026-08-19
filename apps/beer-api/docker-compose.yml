@@ -1,0 +1,42 @@
+# beer-api: read-only DuckDB query API for the per-recipe views.
+#
+# Reachable only over the shared external "apis" network (via cloudflared) —
+# no host ports are published. Build the data first, then bring it up:
+#
+#   npm ci && npm run build:db          # produces ./data/{beer.duckdb,aggregates.json}
+#   docker compose up -d --build
+#
+# To publish a fresh crawl: rebuild the data, then `docker compose restart`
+# (the DB file is swapped; the container reopens it read-only).
+
+services:
+  beer-api:
+    build: .
+    image: beer-api:latest
+    container_name: beer-api
+    restart: unless-stopped
+    environment:
+      # "/beer" behind cloudflared path routing; set to "" if you give it its
+      # own subdomain instead.
+      BASE_PATH: /beer
+      PORT: "8080"
+      DB_PATH: /data/beer.duckdb
+      AGG_PATH: /data/aggregates.json
+      # Lock CORS to your frontend origin(s) in production, comma-separated.
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+    volumes:
+      - ./data:/data:ro
+    networks:
+      apis:
+        aliases:
+          - beer-api
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080'+(process.env.BASE_PATH||'')+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  # Create once on the host:  docker network create apis
+  apis:
+    external: true

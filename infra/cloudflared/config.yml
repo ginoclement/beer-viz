@@ -1,0 +1,25 @@
+# Cloudflare Tunnel ingress — the whole routing layer, no Traefik needed.
+#
+# One tunnel serves apis.ginoclement.com (free Universal SSL covers it, as it is
+# one label under *.ginoclement.com). Path rules dispatch to each app's
+# container on its own internal port. cloudflared does NOT strip the prefix, so
+# each app owns its prefix via BASE_PATH (beer-api handles "/beer").
+#
+# Add a new app = add a 3-line block + `docker compose restart cloudflared`.
+
+tunnel: REPLACE_WITH_TUNNEL_ID
+credentials-file: /etc/cloudflared/creds.json
+
+ingress:
+  # ── beer-viz ────────────────────────────────────────────────
+  - hostname: apis.ginoclement.com
+    path: ^/beer
+    service: http://beer-api:8080
+
+  # ── example: another app later ──────────────────────────────
+  # - hostname: apis.ginoclement.com
+  #   path: ^/family
+  #   service: http://family-api:8080
+
+  # required catch-all
+  - service: http_status:404
