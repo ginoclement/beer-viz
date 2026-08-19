@@ -1,4 +1,5 @@
-import recipesJson from '../generated/recipes.json'
+import corpusJson from '../generated/corpus.json'
+import aggregatesJson from '../generated/aggregates.json'
 import { SERIES } from './palette'
 
 /**
@@ -58,12 +59,55 @@ export interface CorpusRecipe {
   malts: CorpusMalt[]
   hops: CorpusHop[]
   yeast: string | null
-  description: string
+  /** prose notes — only on the fat corpus, absent from the slim app dataset */
+  description?: string
+  /** precomputed total hop dose (g/L) for the outcome scatter */
+  hopGpl?: number | null
+  /** precomputed roasted-grain share of the grist (%) for the outcome scatter */
+  roast?: number
 }
 
-const data = recipesJson as unknown as { source: string; recipes: CorpusRecipe[] }
+// The app reads the SLIM corpus + precomputed aggregates, never the fat
+// recipes.json — so the browser bundle stays small as the corpus grows.
+const data = corpusJson as unknown as { source: string; recipes: CorpusRecipe[] }
 export const CORPUS_SOURCE = data.source
 export const CORPUS: CorpusRecipe[] = data.recipes
+
+// ------------------------------------------------- precomputed aggregates
+
+export interface HopAgg {
+  key: string | null
+  name: string
+  recipes: number
+  totalG: number
+  byStage: Record<string, number>
+  medianGpl: number | null
+}
+export interface GristAgg {
+  n: number
+  byClass: Record<string, number>
+  breakdown: Record<string, { name: string; avgPct: number; count: number }[]>
+}
+export interface OutcomeAgg {
+  n: number
+  avgAbv: number | null
+  avgIbu: number | null
+  avgSrm: number | null
+  avgOg: number | null
+  avgFg: number | null
+}
+export interface FamilyAgg {
+  hops: HopAgg[]
+  grist: GristAgg
+  outcome: OutcomeAgg
+}
+export interface Aggregates {
+  source: string
+  totalRecipes: number
+  families: { family: string; n: number }[]
+  byFamily: Record<string, FamilyAgg>
+}
+export const AGGREGATES = aggregatesJson as unknown as Aggregates
 
 export type HopStage = 'bittering' | 'late' | 'dry'
 

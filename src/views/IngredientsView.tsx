@@ -3,15 +3,13 @@ import { useAnalysis } from '../state/useAnalysis'
 import {
   CORPUS,
   CORPUS_SOURCE,
+  AGGREGATES,
   MALT_CLASS_ORDER,
   STAGES,
-  hopGramsPerLiter,
-  gristShare,
   maltClassColor,
-  canonicalMaltKey,
   type CorpusRecipe,
+  type HopAgg,
 } from '../lib/ingredients'
-import { HOPS } from '../lib/hops'
 import { srmToHex } from '../lib/srm'
 import { GristBar, HopScheduleList } from '../components/IngredientBill'
 import ChartHelp from '../components/ChartHelp'
@@ -22,62 +20,17 @@ const fmtG = (g: number) => (g >= 1000 ? `${(g / 1000).toFixed(1)} kg` : `${Math
 
 // ------------------------------------------------------------- hop leaderboard
 
-interface HopUsage {
-  name: string
-  key: string | null
-  recipes: number
-  totalG: number
-  byStage: Record<string, number>
-  medianGpl: number | null
-}
-
 function HopLeaderboard({
-  recipes,
+  hops,
+  recipeCount,
   onPickHop,
 }: {
-  recipes: CorpusRecipe[]
+  hops: HopAgg[]
+  recipeCount: number
   onPickHop: (key: string) => void
 }) {
   const { cardClass, button } = useCardExpand()
-  const rows = useMemo<HopUsage[]>(() => {
-    const byHop = new Map<string, HopUsage & { gpls: number[] }>()
-    for (const r of recipes) {
-      const perRecipe = new Map<string, { g: number; byStage: Record<string, number> }>()
-      for (const h of r.hops) {
-        const id = h.key ?? h.name.toLowerCase()
-        const e = perRecipe.get(id) ?? { g: 0, byStage: {} }
-        e.g += h.g
-        e.byStage[h.stage] = (e.byStage[h.stage] ?? 0) + h.g
-        perRecipe.set(id, e)
-        if (!byHop.has(id))
-          byHop.set(id, {
-            name: HOPS.find((x) => x.key === h.key)?.name ?? h.name,
-            key: h.key,
-            recipes: 0,
-            totalG: 0,
-            byStage: {},
-            medianGpl: null,
-            gpls: [],
-          })
-      }
-      for (const [id, e] of perRecipe) {
-        const u = byHop.get(id)!
-        u.recipes++
-        u.totalG += e.g
-        for (const [st, g] of Object.entries(e.byStage)) u.byStage[st] = (u.byStage[st] ?? 0) + g
-        if (r.batchL) u.gpls.push(e.g / r.batchL)
-      }
-    }
-    return [...byHop.values()]
-      .filter((u) => u.key) // real hop varieties only — twists live in the sidebar bills
-      .map((u) => {
-        const s = [...u.gpls].sort((a, b) => a - b)
-        return { ...u, medianGpl: s.length ? s[Math.floor(s.length / 2)] : null }
-      })
-      .sort((a, b) => b.recipes - a.recipes)
-      .slice(0, 30)
-  }, [recipes])
-
+  const rows = useMemo(() => hops.slice(0, 30), [hops])
   const maxG = Math.max(...rows.map((r) => r.totalG), 1)
 
   return (
@@ -85,7 +38,7 @@ function HopLeaderboard({
       <div className="cardtools">
         <ChartHelp title="Reading hop usage">
           <p>
-            Every hop addition in the {recipes.length} selected recipes, aggregated per
+            Every hop addition in the {recipeCount} selected recipes, aggregated per
             variety. The bar is the <strong>total weight used across the corpus</strong>,
             split by when it goes in: bittering (early boil), late boil / whirlpool, and
             dry hop.
@@ -112,7 +65,7 @@ function HopLeaderboard({
       </div>
       <h2>What these recipes are actually hopped with</h2>
       <p className="sub">
-        Total grams used across {recipes.length} recipes, split by addition stage. Click a
+        Total grams used across {recipeCount} recipes, split by addition stage. Click a
         hop for its chemistry.
       </p>
       <div style={{ display: 'flex', gap: 16, marginBottom: 10, flexWrap: 'wrap' }}>
@@ -165,68 +118,23 @@ function HopLeaderboard({
 
 // ------------------------------------------------------------- grist by family
 
-interface MaltRow {
-  name: string
-  avgPct: number
-  count: number
-}
-
-/** The actual malts composing one class within one family's recipes. */
-function maltBreakdown(recipes: CorpusRecipe[], cls: string): MaltRow[] {
-  const agg = new Map<string, { names: Map<string, number>; totalPct: number; count: number }>()
-  for (const r of recipes) {
-    const seenInRecipe = new Set<string>()
-    for (const m of r.malts) {
-      if (m.class !== cls) continue
-      const key = canonicalMaltKey(m.name)
-      const e = agg.get(key) ?? { names: new Map(), totalPct: 0, count: 0 }
-      e.totalPct += m.pct
-      e.names.set(m.name, (e.names.get(m.name) ?? 0) + 1)
-      if (!seenInRecipe.has(key)) {
-        e.count++
-        seenInRecipe.add(key)
-      }
-      agg.set(key, e)
-    }
-  }
-  return [...agg.values()]
-    .map((e) => ({
-      name: [...e.names.entries()].sort((a, b) => b[1] - a[1])[0][0],
-      avgPct: e.totalPct / recipes.length,
-      count: e.count,
-    }))
-    .sort((a, b) => b.avgPct - a.avgPct)
-}
-
-function GristByFamily({ recipes }: { recipes: CorpusRecipe[] }) {
+function GristByFamily() {
   const [drill, setDrill] = useState<{ fam: string; cls: string } | null>(null)
 
-  const { rows, byFam } = useMemo(() => {
-    const byFam = new Map<string, CorpusRecipe[]>()
-    for (const r of CORPUS) {
-      byFam.set(r.family, [...(byFam.get(r.family) ?? []), r])
-    }
-    const rows = [...byFam.entries()]
-      .filter(([, rs]) => rs.length >= 5)
-      .map(([fam, rs]) => {
-        const avg: Record<string, number> = {}
-        for (const cls of MALT_CLASS_ORDER) {
-          avg[cls] = rs.reduce((s, r) => s + gristShare(r, [cls]), 0) / rs.length
-        }
-        return { fam, n: rs.length, avg, dark: avg['roasted'] + avg['crystal & caramel'] }
+  // The grist chart always shows every family for comparison, from the
+  // precomputed per-family grist rollup — no corpus iteration in the browser.
+  const rows = useMemo(() => {
+    return AGGREGATES.families
+      .filter(({ n }) => n >= 5)
+      .map(({ family, n }) => {
+        const avg = AGGREGATES.byFamily[family].grist.byClass
+        return { fam: family, n, avg, dark: (avg['roasted'] ?? 0) + (avg['crystal & caramel'] ?? 0) }
       })
       .sort((a, b) => a.dark - b.dark)
-    return { rows, byFam }
   }, [])
 
-  void recipes // family chart always shows the whole corpus for comparison
-
-  const drillRecipes = drill ? byFam.get(drill.fam) ?? [] : []
-  const drillRows = useMemo(
-    () => (drill ? maltBreakdown(drillRecipes, drill.cls) : []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [drill],
-  )
+  const drillRows = drill ? AGGREGATES.byFamily[drill.fam]?.grist.breakdown[drill.cls] ?? [] : []
+  const drillCount = drill ? AGGREGATES.byFamily[drill.fam]?.grist.n ?? 0 : 0
   const drillMax = Math.max(...drillRows.map((r) => r.avgPct), 1)
 
   return (
@@ -319,7 +227,7 @@ function GristByFamily({ recipes }: { recipes: CorpusRecipe[] }) {
               {drill.cls} malts in {drill.fam}
             </strong>
             <span style={{ color: 'var(--muted)', fontSize: 12 }}>
-              across {drillRecipes.length} recipes
+              across {drillCount} recipes
             </span>
             <button className="closex" style={{ float: 'none', marginLeft: 'auto' }} onClick={() => setDrill(null)} aria-label="Close breakdown">
               ×
@@ -355,7 +263,7 @@ function GristByFamily({ recipes }: { recipes: CorpusRecipe[] }) {
             </div>
           )}
           <p style={{ color: 'var(--muted)', fontSize: 11.5, margin: '6px 0 0' }}>
-            Share = average of this malt's grist percentage across all {drillRecipes.length}{' '}
+            Share = average of this malt's grist percentage across all {drillCount}{' '}
             {drill.fam} recipes (zero when absent); "recipes" counts how many actually use it.
           </p>
         </div>
@@ -389,12 +297,12 @@ function OutcomeScatter({
     return recipes
       .map((r) => {
         if (mode === 'hops') {
-          const gpl = hopGramsPerLiter(r)
+          const gpl = r.hopGpl
           if (gpl == null || gpl <= 0 || r.vitals.ibu == null) return null
           return { r, x: gpl, y: r.vitals.ibu }
         }
         if (r.vitals.srm == null) return null
-        return { r, x: gristShare(r, ['roasted']), y: Math.min(r.vitals.srm, 80) }
+        return { r, x: r.roast ?? 0, y: Math.min(r.vitals.srm, 80) }
       })
       .filter((p): p is { r: CorpusRecipe; x: number; y: number } => p !== null)
   }, [recipes, mode])
@@ -592,12 +500,11 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
   const [family, setFamily] = useState<string>('all')
   const [selectedRecipe, setSelectedRecipe] = useState<number | null>(null)
 
-  const families = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const r of CORPUS) counts.set(r.family, (counts.get(r.family) ?? 0) + 1)
-    return [...counts.entries()].sort((a, b) => b[1] - a[1])
-  }, [])
+  const families = AGGREGATES.families
+  const famAgg = AGGREGATES.byFamily[family] ?? AGGREGATES.byFamily.all
 
+  // The scatter is the one per-recipe chart, so it still needs rows — but from
+  // the slim corpus, filtered client-side (the leaderboard/grist read rollups).
   const recipes = useMemo(
     () => (family === 'all' ? CORPUS : CORPUS.filter((r) => r.family === family)),
     [family],
@@ -617,8 +524,8 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
           <label className="ctl">
             Style family
             <select value={family} onChange={(e) => setFamily(e.target.value)} style={{ maxWidth: 240 }}>
-              <option value="all">All families ({CORPUS.length})</option>
-              {families.map(([f, n]) => (
+              <option value="all">All families ({AGGREGATES.totalRecipes})</option>
+              {families.map(({ family: f, n }) => (
                 <option key={f} value={f}>
                   {f} ({n})
                 </option>
@@ -626,15 +533,17 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
             </select>
           </label>
           <span style={{ color: 'var(--muted)' }}>
-            {CORPUS.length} real published recipes with full ingredient bills — BrewDog DIY Dog
+            {AGGREGATES.totalRecipes} recipes with full ingredient bills
           </span>
         </div>
         <div className="charts">
-          {page === 'usage' && <HopLeaderboard recipes={recipes} onPickHop={pickHop} />}
+          {page === 'usage' && (
+            <HopLeaderboard hops={famAgg.hops} recipeCount={famAgg.outcome.n} onPickHop={pickHop} />
+          )}
           {page === 'outcome' && (
             <OutcomeScatter recipes={recipes} selected={selectedRecipe} onSelect={setSelectedRecipe} />
           )}
-          {page === 'grist' && <GristByFamily recipes={recipes} />}
+          {page === 'grist' && <GristByFamily />}
         </div>
       </div>
       <SidePanel>

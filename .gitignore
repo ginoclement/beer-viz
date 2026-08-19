@@ -12,6 +12,7 @@ data/brewersfriend/*
 !data/brewersfriend/recipes.jsonl
 data/brewfather
 
-# local DuckDB corpus database built by scripts/build-corpus.mjs (can be GBs)
+# local DuckDB corpus database + exploration rollups from build-corpus.mjs
 *.duckdb
 *.duckdb.wal
+data/corpus-aggregates.json

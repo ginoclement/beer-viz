@@ -235,6 +235,160 @@ const out = {
 mkdirSync(join(root, 'src/generated'), { recursive: true })
 writeFileSync(join(root, 'src/generated/recipes.json'), JSON.stringify(out))
 
+// ---------------------------------------------------------------- app data
+//
+// The browser must never load the whole corpus (it grows to GBs). So the build
+// precomputes exactly what the views need and ships only that:
+//   - aggregates.json: the rollups the Ingredients view renders (hop
+//     leaderboard, grist by family + malt breakdown, family outcomes), keyed
+//     by style family. O(1) in corpus size for the browser.
+//   - corpus.json: a slim per-recipe row for the interactive per-recipe views
+//     (Style Explorer, 3D Recipe Space, the outcome scatter, recipe detail) —
+//     everything except the heavy prose description, plus precomputed hop-g/L
+//     and roast share so the scatter needs no corpus math.
+// Both regenerate here in build:data, so they are always fresh on Vercel from
+// the committed sources — no separate step, no stale artifacts.
+
+const MALT_CLASSES = [
+  'base',
+  'wheat, oats & rye',
+  'crystal & caramel',
+  'roasted',
+  'sugars & adjuncts',
+  'smoked',
+  'other',
+]
+const keyName = new Map(hopDb.hops.map((h) => [h.key, h.name]))
+const round = (v, d) => (v == null || Number.isNaN(v) ? null : +v.toFixed(d))
+
+const canonicalMaltKey = (name) =>
+  name
+    .toLowerCase()
+    .replace(/weyernmann|weyermann|simpsons|thomas fawcett|crisp\b/g, '')
+    .replace(/\bmalt\b/g, '')
+    .replace(/\btype\s*(\d)/g, '$1')
+    .replace(/\boats?\b/g, 'oat')
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+const gristShare = (r, cls) => r.malts.filter((m) => cls.includes(m.class)).reduce((s, m) => s + m.pct, 0)
+const hopGplOf = (r) => (r.batchL ? r.hops.reduce((s, h) => s + h.g, 0) / r.batchL : null)
+
+function hopLeaderboard(rs) {
+  const byHop = new Map()
+  for (const r of rs) {
+    const per = new Map()
+    for (const h of r.hops) {
+      const id = h.key ?? h.name.toLowerCase()
+      const e = per.get(id) ?? { g: 0, byStage: {} }
+      e.g += h.g
+      e.byStage[h.stage] = (e.byStage[h.stage] ?? 0) + h.g
+      per.set(id, e)
+      if (!byHop.has(id))
+        byHop.set(id, { key: h.key, name: keyName.get(h.key) ?? h.name, recipes: 0, totalG: 0, byStage: {}, gpls: [] })
+    }
+    for (const [id, e] of per) {
+      const u = byHop.get(id)
+      u.recipes++
+      u.totalG += e.g
+      for (const [st, g] of Object.entries(e.byStage)) u.byStage[st] = (u.byStage[st] ?? 0) + g
+      if (r.batchL) u.gpls.push(e.g / r.batchL)
+    }
+  }
+  return [...byHop.values()]
+    .filter((u) => u.key) // real varieties only — twists (coffee, zest) live in the bills
+    .map((u) => {
+      const s = u.gpls.sort((a, b) => a - b)
+      const byStage = {}
+      for (const [st, g] of Object.entries(u.byStage)) byStage[st] = round(g, 1)
+      return { key: u.key, name: u.name, recipes: u.recipes, totalG: round(u.totalG, 1), byStage, medianGpl: s.length ? round(s[Math.floor(s.length / 2)], 2) : null }
+    })
+    .sort((a, b) => b.recipes - a.recipes)
+    .slice(0, 40)
+}
+
+function gristAgg(rs) {
+  const byClass = {}
+  for (const cls of MALT_CLASSES) byClass[cls] = round(rs.reduce((s, r) => s + gristShare(r, [cls]), 0) / rs.length, 2)
+  const breakdown = {}
+  for (const cls of MALT_CLASSES) {
+    const agg = new Map()
+    for (const r of rs) {
+      const seen = new Set()
+      for (const m of r.malts) {
+        if (m.class !== cls) continue
+        const key = canonicalMaltKey(m.name)
+        const e = agg.get(key) ?? { names: new Map(), totalPct: 0, count: 0 }
+        e.totalPct += m.pct
+        e.names.set(m.name, (e.names.get(m.name) ?? 0) + 1)
+        if (!seen.has(key)) {
+          e.count++
+          seen.add(key)
+        }
+        agg.set(key, e)
+      }
+    }
+    const rows = [...agg.values()]
+      .map((e) => ({ name: [...e.names.entries()].sort((a, b) => b[1] - a[1])[0][0], avgPct: round(e.totalPct / rs.length, 2), count: e.count }))
+      .sort((a, b) => b.avgPct - a.avgPct)
+    if (rows.length) breakdown[cls] = rows
+  }
+  return { n: rs.length, byClass, breakdown }
+}
+
+function outcomeAgg(rs) {
+  const avg = (f) => {
+    const v = rs.map(f).filter((x) => x != null)
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null
+  }
+  return {
+    n: rs.length,
+    avgAbv: round(avg((r) => r.vitals.abv), 2),
+    avgIbu: round(avg((r) => r.vitals.ibu), 1),
+    avgSrm: round(avg((r) => r.vitals.srm), 1),
+    avgOg: round(avg((r) => r.vitals.og), 4),
+    avgFg: round(avg((r) => r.vitals.fg), 4),
+  }
+}
+
+const familyGroups = new Map()
+for (const r of recipes) familyGroups.set(r.family, [...(familyGroups.get(r.family) ?? []), r])
+const families = [...familyGroups.entries()].map(([family, rs]) => ({ family, n: rs.length })).sort((a, b) => b.n - a.n)
+
+const byFamily = { all: { hops: hopLeaderboard(recipes), grist: gristAgg(recipes), outcome: outcomeAgg(recipes) } }
+for (const { family } of families) {
+  const rs = familyGroups.get(family)
+  byFamily[family] = { hops: hopLeaderboard(rs), grist: gristAgg(rs), outcome: outcomeAgg(rs) }
+}
+
+writeFileSync(
+  join(root, 'src/generated/aggregates.json'),
+  JSON.stringify({ source: out.source, totalRecipes: recipes.length, families, byFamily }),
+)
+
+// Slim per-recipe rows: drop the prose description and per-malt weight; add
+// precomputed hop-g/L and roasted-grain share for the outcome scatter.
+const slim = recipes.map((r) => ({
+  id: r.id,
+  name: r.name,
+  tagline: r.tagline,
+  year: r.year,
+  family: r.family,
+  origin: r.origin,
+  styleGuess: r.styleGuess,
+  vitals: r.vitals,
+  attenuation: r.attenuation,
+  mash: r.mash,
+  fermentTempC: r.fermentTempC,
+  batchL: r.batchL,
+  malts: r.malts.map((m) => ({ name: m.name, pct: m.pct, class: m.class })),
+  hops: r.hops.map((h) => ({ name: h.name, key: h.key, g: h.g, stage: h.stage })),
+  yeast: r.yeast,
+  hopGpl: round(hopGplOf(r), 2),
+  roast: round(gristShare(r, ['roasted']), 2),
+}))
+writeFileSync(join(root, 'src/generated/corpus.json'), JSON.stringify({ source: out.source, recipes: slim }))
+
 const famCount = {}
 for (const r of recipes) famCount[r.family] = (famCount[r.family] ?? 0) + 1
 console.log({
@@ -249,4 +403,4 @@ console.log({
 })
 const topUnmatched = [...unmatchedHops.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)
 console.log('top unmatched hop names (twists & extracts expected):', topUnmatched)
-console.log('wrote src/generated/recipes.json')
+console.log(`wrote recipes.json (fat), corpus.json (slim, ${slim.length} rows), aggregates.json (${families.length} families)`)

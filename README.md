@@ -140,22 +140,36 @@ offline); it prints what it extracted and flags anything the live markup
 breaks. Parsers live in `scripts/lib/brewersfriend.mjs` with tests in
 `tests/brewersfriend.test.ts`.
 
-**Recipe corpus at scale (DuckDB)**: the full crawl is expected to reach
-several GB — far too much to ship to the browser, and the visualizations only
-ever need *aggregates* (malt usage, hop pairings, grist by family, per-family
-outcome envelopes), which are OLAP roll-ups. `scripts/build-corpus.mjs` runs
-those in [DuckDB](https://duckdb.org), an embedded columnar engine — no server,
-no container, nothing for the deployed site to talk to. It is a build step, the
-same kind `build-recipes.mjs` already is:
+**How the app scales (the browser never loads the whole corpus).** The full
+crawl is expected to reach several GB — far too much to ship to the browser.
+So `build:data` (`scripts/build-recipes.mjs`, which Vercel runs) emits two slim,
+app-facing files alongside the fat `recipes.json`, and the app reads only these:
+
+- `src/generated/aggregates.json` — the rollups the **Ingredients** view renders
+  (hop leaderboard, grist by family + malt breakdown, family outcomes), keyed by
+  style family. Bounded in size; O(1) in corpus size for the browser.
+- `src/generated/corpus.json` — a **slim per-recipe** row (everything the Style
+  Explorer, 3D Recipe Space, outcome scatter, and recipe detail need, minus the
+  prose description, plus precomputed hop-g/L and roast share) so the per-recipe
+  views never touch the fat corpus.
+
+Both regenerate in `build:data`, so they are always fresh on Vercel from the
+committed `recipes.jsonl` — no separate step, no stale artifacts. The fat
+`recipes.json` stays local-only (git-ignored) as the DuckDB input below.
+
+**Recipe corpus exploration (DuckDB)**: a separate, optional analytics tier for
+ad-hoc querying of the full corpus. `scripts/build-corpus.mjs` loads it into
+[DuckDB](https://duckdb.org), an embedded columnar engine — no server, no
+container — building a durable star-schema database you can query by hand:
 
 ```
-recipes.json  (GBs, local)  --DuckDB rollups-->  aggregates.json  (small, shipped)
+recipes.json  (GBs, local)  --DuckDB rollups-->  data/corpus-aggregates.json  (local exploration)
 ```
 
 ```
 npm install            # @duckdb/node-api is an optionalDependency — plain installs and the Vercel build never touch it
-npm run build:data     # normalize the corpus first
-npm run build:corpus   # -> data/corpus.duckdb  +  src/generated/aggregates.json
+npm run build:data     # normalize the corpus first (also emits the app's aggregates.json + corpus.json)
+npm run build:corpus   # -> data/corpus.duckdb  +  data/corpus-aggregates.json (both local, git-ignored)
 ```
 
 `read_json` streams the corpus, so the same pipeline scales from the 415-recipe
