@@ -28,9 +28,11 @@ type Link = SimulationLinkDatum<Node> & { w: number }
 
 function NetworkGraph({
   threshold,
+  showLabels,
   onPick,
 }: {
   threshold: number
+  showLabels: boolean
   onPick: (id: string) => void
 }) {
   const { styles, numericZ, clusterOf, clusterNames, alpha, selectedId } = useAnalysis()
@@ -38,13 +40,14 @@ function NetworkGraph({
   const wrapRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null)
   const nodesRef = useRef<Node[]>([])
-  const graphRef = useRef<{ sim: Simulation<Node, Link>; links: Link[]; draw: () => void } | null>(
+  const graphRef = useRef<{ sim: Simulation<Node, Link>; links: Link[]; draw: () => void; settle: () => void } | null>(
     null,
   )
   // Selection and cluster colors are read through refs so a click or a k
   // change repaints the canvas without rebuilding the force layout.
   const selectedRef = useRef(selectedId)
   const clustersRef = useRef(clusterOf)
+  const labelsRef = useRef(showLabels)
   const viewRef = useRef(identityView())
   const interactedRef = useRef(false)
   const draggedRef = useRef<() => boolean>(() => false)
@@ -144,8 +147,8 @@ function NetworkGraph({
           ctx.stroke()
         }
       }
-      // zoomed in far enough, name every node (constant screen-size text)
-      if (view.k >= 1.8) {
+      // name every node when the labels toggle is on, or when zoomed in
+      if (labelsRef.current || view.k >= 1.8) {
         ctx.font = `600 ${11.5 / view.k}px system-ui, sans-serif`
         ctx.textBaseline = 'middle'
         ctx.fillStyle = '#e8e6df'
@@ -155,15 +158,18 @@ function NetworkGraph({
         ctx.shadowBlur = 0
       }
     }
-    graphRef.current = { sim, links: [], draw }
-
-    // keep the whole layout in frame while it settles; stop the moment the
-    // user zooms or pans, and let double-click hand control back to auto-fit
     const fit = () => fitViewToPoints(viewRef.current, nodes, width, height)
-    sim.on('tick', () => {
+    // Settle the layout synchronously and freeze it, rather than animating
+    // the force sim on screen: an animated settle re-frames every tick and
+    // reads as the whole graph sweeping side to side. `settle` runs the
+    // physics off-screen, fits once, and paints the finished layout.
+    const settle = () => {
+      sim.alpha(1).stop()
+      for (let i = 0; i < 300 && sim.alpha() > sim.alphaMin(); i++) sim.tick()
       if (!interactedRef.current) fit()
       draw()
-    })
+    }
+    graphRef.current = { sim, links: [], draw, settle }
 
     const pz = attachPanZoom(canvas, {
       view: viewRef.current,
@@ -198,22 +204,23 @@ function NetworkGraph({
     }
   }, [styles])
 
-  // Swap the link set in place and gently reheat: node positions survive
-  // threshold/blend changes instead of the graph re-laying-out from scratch.
+  // Swap the link set in place and re-settle off-screen: node positions
+  // survive threshold/blend changes and the graph never animates on screen.
   useEffect(() => {
     const g = graphRef.current
     if (!g) return
     g.links = links.map((l) => ({ ...l }))
     ;(g.sim.force('link') as ForceLink<Node, Link>).links(g.links)
-    g.sim.alpha(0.5).restart()
+    g.settle()
   }, [links])
 
-  // Selection and cluster recoloring: repaint only.
+  // Selection, cluster recoloring, and the labels toggle: repaint only.
   useEffect(() => {
     selectedRef.current = selectedId
     clustersRef.current = clusterOf
+    labelsRef.current = showLabels
     graphRef.current?.draw()
-  }, [selectedId, clusterOf])
+  }, [selectedId, clusterOf, showLabels])
 
   const nodeAt = (ev: React.MouseEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect()
@@ -321,6 +328,7 @@ export default function SimilarityView({ goToSpace }: { goToSpace?: () => void }
   } = useAnalysis()
   const [threshold, setThreshold] = useState(0.78)
   const [rankBy, setRankBy] = useState<'blend' | 'flavor'>('blend')
+  const [showLabels, setShowLabels] = useState(false)
 
   const focus = allStyles.find((s) => s.id === selectedId) ?? styles[0]
   const focusStatsIndex = styles.findIndex((s) => s.id === focus?.id)
@@ -430,6 +438,10 @@ export default function SimilarityView({ goToSpace }: { goToSpace?: () => void }
             />
             <span className="val">{threshold.toFixed(2)}</span>
           </label>
+          <label className="ctl">
+            <input type="checkbox" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} />
+            Labels
+          </label>
         </div>
         <div className="simgrid">
           <div className="simlist">
@@ -490,7 +502,7 @@ export default function SimilarityView({ goToSpace }: { goToSpace?: () => void }
               </p>
             )}
           </div>
-          <NetworkGraph threshold={threshold} onPick={setSelectedId} />
+          <NetworkGraph threshold={threshold} showLabels={showLabels} onPick={setSelectedId} />
         </div>
       </div>
       <SidePanel>

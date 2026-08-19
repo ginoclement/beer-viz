@@ -504,12 +504,14 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
   const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null)
   const nodesRef = useRef<Node[]>([])
   const [threshold, setThreshold] = useState(0.93)
-  const graphRef = useRef<{ sim: Simulation<Node, Link>; links: Link[]; draw: () => void } | null>(
+  const [showLabels, setShowLabels] = useState(false)
+  const graphRef = useRef<{ sim: Simulation<Node, Link>; links: Link[]; draw: () => void; settle: () => void } | null>(
     null,
   )
   // Selection is read through a ref so clicking a hop repaints the canvas
   // without rebuilding the force layout.
   const selectedRef = useRef(selectedKey)
+  const labelsRef = useRef(showLabels)
   const viewRef = useRef(identityView())
   const interactedRef = useRef(false)
   const draggedRef = useRef<() => boolean>(() => false)
@@ -616,8 +618,8 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
           ctx.stroke()
         }
       }
-      // zoomed in far enough, name every hop (constant screen-size text)
-      if (view.k >= 1.6) {
+      // name every hop when the labels toggle is on, or when zoomed in
+      if (labelsRef.current || view.k >= 1.6) {
         ctx.font = `600 ${11 / view.k}px system-ui, sans-serif`
         ctx.textBaseline = 'middle'
         ctx.fillStyle = '#e8e6df'
@@ -627,14 +629,16 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
         ctx.shadowBlur = 0
       }
     }
-    graphRef.current = { sim, links: [], draw }
-    // keep the whole layout in frame while it settles; stop the moment the
-    // user zooms or pans, and let double-click hand control back to auto-fit
     const fit = () => fitViewToPoints(viewRef.current, nodes, width, height)
-    sim.on('tick', () => {
+    // settle the layout off-screen and freeze it — no animated tick loop
+    // sweeping the graph around (see SimilarityView for the rationale)
+    const settle = () => {
+      sim.alpha(1).stop()
+      for (let i = 0; i < 300 && sim.alpha() > sim.alphaMin(); i++) sim.tick()
       if (!interactedRef.current) fit()
       draw()
-    })
+    }
+    graphRef.current = { sim, links: [], draw, settle }
     const pz = attachPanZoom(canvas, {
       view: viewRef.current,
       toCenter: (e) => {
@@ -652,7 +656,12 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
       },
     })
     draggedRef.current = pz.dragged
+    let lastW = width
+    let lastH = height
     const ro = new ResizeObserver(() => {
+      if (wrap.clientWidth === lastW && wrap.clientHeight === lastH) return
+      lastW = wrap.clientWidth
+      lastH = wrap.clientHeight
       sizeCanvas()
       draw()
     })
@@ -665,21 +674,21 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
     }
   }, [hops])
 
-  // Swap the link set in place and gently reheat: node positions survive
-  // threshold changes instead of the graph re-laying-out from scratch.
+  // Swap the link set in place and re-settle off-screen.
   useEffect(() => {
     const g = graphRef.current
     if (!g) return
     g.links = links.map((l) => ({ ...l }))
     ;(g.sim.force('link') as ForceLink<Node, Link>).links(g.links)
-    g.sim.alpha(0.5).restart()
+    g.settle()
   }, [links])
 
-  // Selection change: repaint only.
+  // Selection change and labels toggle: repaint only.
   useEffect(() => {
     selectedRef.current = selectedKey
+    labelsRef.current = showLabels
     graphRef.current?.draw()
-  }, [selectedKey])
+  }, [selectedKey, showLabels])
 
   const nodeAt = (ev: React.MouseEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect()
@@ -726,6 +735,10 @@ function HopNetwork({ selectedKey, onPickHop }: { selectedKey: string | null; on
           Aroma-similarity threshold
           <input type="range" min={0.88} max={0.98} step={0.005} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} />
           <span className="val">{threshold.toFixed(3)}</span>
+        </label>
+        <label className="ctl" style={{ fontSize: 12, marginTop: 4 }}>
+          <input type="checkbox" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} />
+          Show hop names
         </label>
       </div>
       <div className="cardtools">
