@@ -84,6 +84,20 @@ function matchStyle(vitals) {
 
 const cToC = (t) => (t?.unit === 'fahrenheit' ? +(((t.value - 32) * 5) / 9).toFixed(1) : t?.value ?? null)
 
+// Crawled recipes carry occasional parse errors (an OG of 1.773, a negative
+// IBU). Drop physically implausible vitals to null so one bad field can't
+// distort the projection, scatters, or style matching.
+const plausible = (v, lo, hi) => (v != null && v >= lo && v <= hi ? v : null)
+function sanitizeVitals(v) {
+  return {
+    og: plausible(v.og, 1.005, 1.18),
+    fg: plausible(v.fg, 0.99, 1.04),
+    abv: plausible(v.abv, 0, 20),
+    ibu: plausible(v.ibu, 0, 250),
+    srm: plausible(v.srm, 0, 200),
+  }
+}
+
 const recipes = []
 let hopEntries = 0
 let hopMatched = 0
@@ -133,13 +147,13 @@ for (const b of beers) {
     })
   }
 
-  const vitals = {
+  const vitals = sanitizeVitals({
     og,
     fg,
     abv: b.abv ?? null,
     ibu: b.ibu ?? null,
     srm: srm != null ? +(+srm).toFixed(1) : null,
-  }
+  })
   const mashStep = (b.method?.mash_temp ?? [])[0]
   const mashC = cToC(mashStep?.temp)
   recipes.push({
@@ -195,13 +209,13 @@ if (existsSync(bfFile)) {
       }
     })
     bfCount++
-    const bfVitals = {
+    const bfVitals = sanitizeVitals({
       og: normGravity(r.vitals?.og),
       fg: normGravity(r.vitals?.fg),
       abv: r.vitals?.abv ?? null,
       ibu: r.vitals?.ibu ?? null,
       srm: r.vitals?.srm != null ? +(+r.vitals.srm).toFixed(1) : null,
-    }
+    })
     recipes.push({
       id: 100000 + bfCount, // corpus ids stay unique across origins
       name: r.name,

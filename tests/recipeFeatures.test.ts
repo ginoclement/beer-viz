@@ -3,6 +3,8 @@ import { buildRecipeFeatureSpace } from '../src/lib/recipeFeatures'
 import { CORPUS } from '../src/lib/ingredients'
 import { NUMERIC_FEATURE_NAMES } from '../src/lib/features'
 import { MALT_CLASS_ORDER } from '../src/lib/ingredients'
+// @ts-ignore - plain-JS build helper, exercised here without a declaration file
+import { buildRecipeProjections, BLENDS } from '../scripts/lib/recipeProjection.mjs'
 
 describe('recipe schema enrichment', () => {
   it('derives apparent attenuation consistent with OG/FG', () => {
@@ -57,5 +59,30 @@ describe('buildRecipeFeatureSpace', () => {
     // at blend 0 the ingredient block is zeroed out; at blend 1 the vitals block is
     expect(vitalsOnly.vectors.reduce((s, v) => s + magIng(v), 0)).toBeCloseTo(0, 6)
     expect(ingOnly.vectors.reduce((s, v) => s + magVit(v), 0)).toBeCloseTo(0, 6)
+  })
+})
+
+describe('buildRecipeProjections (build step)', () => {
+  // PCA only — UMAP is exercised at build time; keep the test fast.
+  const proj = buildRecipeProjections(CORPUS, { umap: false })
+
+  it('projects every full-vitals recipe, aligned across ids and coords', () => {
+    const eligible = CORPUS.filter(
+      (r) => r.vitals.og != null && r.vitals.fg != null && r.vitals.abv != null && r.vitals.ibu != null && r.vitals.srm != null,
+    )
+    expect(proj.ids.length).toBe(eligible.length)
+    for (const b of BLENDS) expect(proj.pca[String(b)].length).toBe(proj.ids.length)
+  })
+
+  it('emits finite, rescaled 3D coordinates and explained variance per blend', () => {
+    for (const b of BLENDS) {
+      const key = String(b)
+      for (const p of proj.pca[key]) {
+        expect(p.length).toBe(3)
+        for (const c of p) expect(Number.isFinite(c)).toBe(true)
+      }
+      expect(proj.explained[key].length).toBe(3)
+      expect(proj.explained[key][0]).toBeGreaterThanOrEqual(proj.explained[key][1])
+    }
   })
 })

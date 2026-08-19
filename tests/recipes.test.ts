@@ -92,8 +92,10 @@ describe('generated recipe corpus', () => {
     const families = new Set(recipes.map((r) => r.family))
     expect(families.has('stout')).toBe(true)
     expect(families.has('lager & pilsner')).toBe(true)
-    // family classification should leave few strays
+    // family classification should leave few strays. The crawled community
+    // corpus is far more varied than the DIY Dog seed (experimental/specialty
+    // brews), so the unclassified share is higher but still a minority.
     const other = recipes.filter((r) => r.family === 'other').length
-    expect(other / recipes.length).toBeLessThan(0.12)
+    expect(other / recipes.length).toBeLessThan(0.2)
   })
 })

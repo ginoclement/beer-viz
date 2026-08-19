@@ -153,9 +153,20 @@ app-facing files alongside the fat `recipes.json`, and the app reads only these:
   prose description, plus precomputed hop-g/L and roast share) so the per-recipe
   views never touch the fat corpus.
 
-Both regenerate in `build:data`, so they are always fresh on Vercel from the
-committed `recipes.jsonl` — no separate step, no stale artifacts. The fat
-`recipes.json` stays local-only (git-ignored) as the DuckDB input below.
+- `src/generated/recipeProjection.json` — the **3D Recipe Space coordinates**,
+  precomputed by `scripts/build-projection.mjs` (PCA and UMAP, at three
+  vitals⇄ingredients blends) so the browser renders thousands of points
+  instantly instead of running the projection on the main thread (~8s for 7k
+  recipes). PCA is cheap; UMAP dominates the build (~15s/blend) but runs here,
+  not in the user's browser. Set `BUILD_UMAP=0` to skip UMAP for fast local
+  iteration — the view disables the UMAP toggle when it is absent.
+
+Vitals are sanitized during the build (physically implausible OG/FG/ABV/IBU/SRM
+from crawl parse errors are dropped to null) so one bad field can't distort the
+projection or scatters. All of these regenerate in `build:data`, so they are
+always fresh on Vercel from the committed `recipes.jsonl` — no separate step, no
+stale artifacts. The fat `recipes.json` stays local-only (git-ignored) as the
+DuckDB input below.
 
 **Recipe corpus exploration (DuckDB)**: a separate, optional analytics tier for
 ad-hoc querying of the full corpus. `scripts/build-corpus.mjs` loads it into

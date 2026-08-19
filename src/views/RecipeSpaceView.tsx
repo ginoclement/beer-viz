@@ -3,14 +3,27 @@ import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { CORPUS, type CorpusRecipe } from '../lib/ingredients'
-import { buildRecipeFeatureSpace } from '../lib/recipeFeatures'
-import { project, type ProjectionMethod } from '../lib/projection'
+import projectionData from '../generated/recipeProjection.json'
 import { srmToHex } from '../lib/srm'
 import { GristBar, HopScheduleList } from '../components/IngredientBill'
 import SidePanel from '../components/SidePanel'
 import ChartHelp from '../components/ChartHelp'
 
 type ColorMode = 'family' | 'srm' | 'abv'
+type ProjMethod = 'pca' | 'umap'
+type Coords = [number, number, number][]
+
+// Coordinates are precomputed at build time (scripts/build-projection.mjs) for
+// both methods and a few discrete "vitals ⇄ ingredients" blends, so the browser
+// renders thousands of points instantly instead of running PCA/UMAP live.
+const PROJ = projectionData as unknown as {
+  ids: number[]
+  pca: Record<string, Coords>
+  umap: Record<string, Coords> | null
+  explained: Record<string, number[]>
+}
+const BLENDS = [0, 0.5, 1]
+const nearestBlend = (b: number) => BLENDS.reduce((p, c) => (Math.abs(c - b) < Math.abs(p - b) ? c : p), 0.5)
 
 // Stable family → color map over the corpus, so the legend and points agree.
 // There are ~15 families — more than the 8-step categorical palette — so we
@@ -162,19 +175,33 @@ function RecipeDetail({ recipe }: { recipe: CorpusRecipe }) {
   )
 }
 
+// The recipe set is fixed (the full-vitals recipes the projection was built
+// over), in the same order as every coordinate array.
+const PROJ_RECIPES: CorpusRecipe[] = (() => {
+  const byId = new Map(CORPUS.map((r) => [r.id, r]))
+  return PROJ.ids.map((id) => byId.get(id)).filter((r): r is CorpusRecipe => !!r)
+})()
+
 export default function RecipeSpaceView() {
-  const [method, setMethod] = useState<ProjectionMethod>('pca')
+  const hasUmap = !!PROJ.umap
+  const [method, setMethod] = useState<ProjMethod>('pca')
   const [colorMode, setColorMode] = useState<ColorMode>('family')
   const [blend, setBlend] = useState(0.5)
   const [hover, setHover] = useState<Hover | null>(null)
   const [selected, setSelected] = useState<number>(-1)
 
-  // Feature space + projection are the heavy step; recompute only when the
-  // basis (blend) changes, and reproject only when the method changes.
-  const space = useMemo(() => buildRecipeFeatureSpace(CORPUS, { blend }), [blend])
-  const projection = useMemo(() => project(space.vectors, method), [space, method])
+  // Coordinates are looked up from the precomputed projection — no PCA/UMAP in
+  // the browser. The blend control snaps to the discrete precomputed levels.
+  const blendKey = String(nearestBlend(blend))
+  const recipes = PROJ_RECIPES
+  const projection = useMemo(() => {
+    const table = method === 'umap' && PROJ.umap ? PROJ.umap : PROJ.pca
+    return {
+      points: table[blendKey] ?? PROJ.pca[blendKey],
+      explainedVariance: method === 'pca' ? PROJ.explained[blendKey] : undefined,
+    }
+  }, [method, blendKey])
 
-  const recipes = space.recipes
   const abvRange = useMemo(() => {
     const vals = recipes.map((r) => r.vitals.abv ?? 0)
     return [Math.min(...vals), Math.max(...vals)] as [number, number]
@@ -210,7 +237,13 @@ export default function RecipeSpaceView() {
             Projection
             <span className="seg">
               {(['pca', 'umap'] as const).map((m) => (
-                <button key={m} className={method === m ? 'active' : ''} onClick={() => setMethod(m)}>
+                <button
+                  key={m}
+                  className={method === m ? 'active' : ''}
+                  disabled={m === 'umap' && !hasUmap}
+                  title={m === 'umap' && !hasUmap ? 'UMAP not precomputed for this build' : undefined}
+                  onClick={() => setMethod(m)}
+                >
                   {m.toUpperCase()}
                 </button>
               ))}
@@ -232,17 +265,17 @@ export default function RecipeSpaceView() {
               ))}
             </span>
           </label>
-          <label className="ctl" title="0 = vitals only, 1 = ingredients only">
+          <label className="ctl" title="What drives the layout — precomputed at three levels">
             Vitals ⇄ ingredients
             <input
               type="range"
               min={0}
               max={1}
-              step={0.05}
+              step={0.5}
               value={blend}
               onChange={(e) => setBlend(Number(e.target.value))}
             />
-            <span className="val">{blend.toFixed(2)}</span>
+            <span className="val">{blend === 0 ? 'vitals' : blend === 1 ? 'ingredients' : 'balanced'}</span>
           </label>
           <span className="ctl" style={{ color: 'var(--muted)', fontSize: 12 }}>
             {recipes.length.toLocaleString()} recipes
