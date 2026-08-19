@@ -17,5 +17,8 @@ data/brewfather
 *.duckdb.wal
 data/corpus-aggregates.json
 
+# cloudflare tunnel credentials — never commit
+infra/cloudflared/creds.json
+
 # beer-api build artifacts (the query DB is rebuilt from src/generated)
 apps/beer-api/data/
