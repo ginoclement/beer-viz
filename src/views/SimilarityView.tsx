@@ -77,13 +77,23 @@ function NetworkGraph({
     let height = wrap.clientHeight
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
 
+    // block, not the default inline: an inline canvas carries a baseline
+    // descender that makes the wrap a few px taller than the canvas, which
+    // re-triggers the ResizeObserver — the flickering resize loop.
+    canvas.style.display = 'block'
+    let applied = false
     const sizeCanvas = () => {
-      width = wrap.clientWidth
-      height = wrap.clientHeight
+      const w = wrap.clientWidth
+      const h = wrap.clientHeight
+      if (applied && w === width && h === height) return false // no real change
+      applied = true
+      width = w
+      height = h
       canvas.width = width * dpr
       canvas.height = height * dpr
       canvas.style.width = `${width}px`
       canvas.style.height = `${height}px`
+      return true
     }
     sizeCanvas()
 
@@ -174,8 +184,9 @@ function NetworkGraph({
     draggedRef.current = pz.dragged
 
     const ro = new ResizeObserver(() => {
-      sizeCanvas()
-      draw()
+      // only redraw when the size actually changed, so an observer callback
+      // triggered by our own canvas resize can't loop
+      if (sizeCanvas()) draw()
     })
     ro.observe(wrap)
 
