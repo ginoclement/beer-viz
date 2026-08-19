@@ -21,6 +21,16 @@ export interface CorpusHop {
   key: string | null
   g: number
   stage: HopStage
+  /** boil/steep time in minutes when the source records it, else null */
+  timeMin?: number | null
+}
+
+/** Best-fit BJCP style for a recipe's vitals (bjcp2021 reference). */
+export interface StyleGuess {
+  code: string
+  name: string
+  /** how many of the five vitals fall inside the style's published range */
+  inRange: number
 }
 
 export interface CorpusRecipe {
@@ -29,6 +39,7 @@ export interface CorpusRecipe {
   tagline: string
   year: number | null
   family: string
+  origin?: string
   vitals: {
     og: number | null
     fg: number | null
@@ -36,6 +47,13 @@ export interface CorpusRecipe {
     ibu: number | null
     srm: number | null
   }
+  /** apparent attenuation %, derived from OG/FG */
+  attenuation?: number | null
+  styleGuess?: StyleGuess | null
+  mash?: { tempC: number | null; durationMin: number | null } | null
+  fermentTempC?: number | null
+  method?: string | null
+  efficiency?: number | null
   batchL: number | null
   malts: CorpusMalt[]
   hops: CorpusHop[]

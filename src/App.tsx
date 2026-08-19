@@ -7,6 +7,8 @@ import VitalsView from './views/VitalsView'
 import MatrixView from './views/MatrixView'
 import CompareView from './views/CompareView'
 import RecipeView from './views/RecipeView'
+import StyleExplorerView from './views/StyleExplorerView'
+import RecipeSpaceView from './views/RecipeSpaceView'
 import BrowseView from './views/BrowseView'
 import HopsView from './views/HopsView'
 import IngredientsView from './views/IngredientsView'
@@ -51,6 +53,13 @@ const NAV = [
       { id: 'ing-usage', label: 'Hop Usage' },
       { id: 'ing-grist', label: 'Grist by Family' },
       { id: 'ing-outcome', label: 'Ingredients → Outcome' },
+    ],
+  },
+  {
+    group: 'Recipes',
+    pages: [
+      { id: 'recipes-explore', label: 'Style Explorer' },
+      { id: 'recipes-space', label: '3D Recipe Space' },
     ],
   },
   {
@@ -225,6 +234,8 @@ function Shell() {
       {page === 'compare-map' && <CompareView page="map" />}
       {page === 'compare-drift' && <CompareView page="drift" />}
 
+      {page === 'recipes-explore' && <StyleExplorerView />}
+      {page === 'recipes-space' && <RecipeSpaceView />}
       {page === 'browse' && <BrowseView goToSpace={() => goToPage('space')} />}
       {page === 'recipes' && <RecipeView goToSpace={() => goToPage('space')} />}
 

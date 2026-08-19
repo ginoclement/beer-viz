@@ -17,6 +17,8 @@ you drop your own recipes into the same math.
 | **Guidelines** | Compare BJCP 2021 vs BJCP 2015 vs Brewers Association 2017: vital-statistic drift per matched style (with fuzzy name matching), styles added/removed, and both guidelines embedded into one shared PCA map. |
 | **Hops** | 210 hop varieties with merged producer chemistry: alpha/beta acids, cohumulone, total oil, oil composition (myrcene, humulene, caryophyllene, farnesene, geraniol, linalool), 9-axis sensory radar, curated thiol-potential classes, pedigree, and producer substitute lists. Includes a hop-aroma PCA map, a substitution & kinship network, and a **style↔hop pairing engine**: hops are scored for any style by (1) cosine match between the hop's measured aroma profile and the hop character mined from the style's guideline prose, (2) regional tradition, and (3) alpha-acid fit to the style's bitterness load — with the same engine run in reverse to list each hop's best-fit styles. |
 | **Ingredients** | What brewers actually put in the kettle, computed from 414 real published recipes with complete ingredient bills (BrewDog DIY Dog): a hop-usage leaderboard split by addition stage (bittering / late / dry) with median g/L doses, average grist composition per style family, and ingredients→outcome scatters (hop g/L vs IBU, roast % vs SRM). Every recipe opens with its full grain bill and hop schedule; every hop cross-links to its chemistry on the Hops tab. |
+| **Recipes → Style Explorer** | Pick a target BJCP style and see every corpus recipe whose OG/FG/ABV/IBU/SRM fall inside that style's published ranges (with a tolerance slider to admit near-misses), laid out on a parallel-coordinates plot — the style's range shown as a shaded band, each recipe a line painted its SRM color — plus a ranked, clickable list to compare and open any recipe's full bill. |
+| **Recipes → 3D Recipe Space** | PCA/UMAP projection of the whole recipe corpus into 3D from a feature space of **vitals + ingredients** (z-scored OG/FG/ABV/IBU/color/attenuation/BU:GU, malt-class fractions, and common-hop presence). A *vitals ⇄ ingredients* slider tilts what drives the layout; recolor by family, beer color, or strength. Instanced rendering built to scale to thousands of recipes as the crawl lands. |
 | **Browse** | Full-text search over names, categories, tags, and descriptions; tag filters; sortable columns; true-color SRM swatches. |
 | **My Recipes** | Import a **Brewfather JSON** export, a **BeerXML** file (Brewer's Friend recipes export as BeerXML), or manual vitals. The recipe gets BJCP-vocabulary tags derived from its numbers, is projected into the current style space with the fitted PCA/UMAP transform, ranked against every style, and drawn as a diamond in the 3D view with dashed tethers to its top-3 matches. Imports that carry ingredient lists show their grist breakdown and hop schedule too. Recipes persist in localStorage; everything runs client-side and nothing is uploaded. |
 
@@ -86,7 +88,13 @@ normalizes gravities (fixing a few swapped OG/FG pairs in the source), folds
 40+ hop-timing spellings into three stages, classifies every malt into grist
 families, matches ~92% of hop additions to the hop-chemistry dataset (the rest
 are non-hop "twists" like coffee and citrus peel), and classifies each recipe
-into a style family from its name/tagline/description.
+into a style family from its name/tagline/description. Each recipe is also
+enriched with its **apparent attenuation** (from OG/FG), **mash** temperature and
+duration and **fermentation** temperature (where the source records them), and a
+best-fit **BJCP style** — the style whose published OG/FG/ABV/IBU/SRM ranges most
+contain the recipe's vitals (the same test the Style Explorer runs live). Method,
+efficiency, and per-hop boil times are carried as schema slots that populate from
+the Brewer's Friend crawl.
 
 **On crawling recipe sites**: Brewer's Friend has no public recipe API and its
 terms prohibit automated scraping — individual recipes export as BeerXML, which

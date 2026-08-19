@@ -29,6 +29,61 @@ const beers = JSON.parse(readFileSync(join(root, 'data/raw/recipes/diydog.json')
 const hopDb = JSON.parse(readFileSync(join(root, 'src/generated/hops.json'), 'utf8'))
 const matchHop = makeHopMatcher(hopDb)
 
+// BJCP 2021 styles with published vital ranges, used to tag each recipe with
+// its best-fit style code (e.g. 21A American IPA). This is the same
+// "which style's box does this beer sit in" test the Style Explorer runs live,
+// frozen here as a convenience label; the app recomputes against whichever
+// guide is selected. bjcp2021 is the default reference.
+const guides = JSON.parse(readFileSync(join(root, 'src/generated/guides.json'), 'utf8'))
+const refStyles = (guides.find((g) => g.guide === 'bjcp2021')?.styles ?? []).filter(
+  (s) => s.hasStats,
+)
+
+const VITAL_KEYS = ['og', 'fg', 'abv', 'ibu', 'srm']
+
+/** Apparent attenuation (%) from gravities, or null if not derivable. */
+function attenuationOf(og, fg) {
+  if (og == null || fg == null || og <= 1) return null
+  return +(((og - fg) / (og - 1)) * 100).toFixed(1)
+}
+
+/**
+ * Best-fit BJCP style for a set of vitals: the style with the most vitals
+ * inside its published range, tie-broken by the smallest mean normalized
+ * distance to the range midpoints. Returns { code, name, inRange, considered }.
+ */
+function matchStyle(vitals) {
+  let best = null
+  let bestIn = -1
+  let bestDist = Infinity
+  for (const s of refStyles) {
+    let inRange = 0
+    let considered = 0
+    let dist = 0
+    for (const k of VITAL_KEYS) {
+      const r = s.stats[k]
+      const v = vitals[k]
+      if (!r || v == null) continue
+      considered++
+      const [lo, hi] = r
+      const half = Math.max((hi - lo) / 2, 1e-9)
+      const mid = (lo + hi) / 2
+      if (v >= lo && v <= hi) inRange++
+      dist += Math.abs(v - mid) / half
+    }
+    if (considered === 0) continue
+    const nd = dist / considered
+    if (inRange > bestIn || (inRange === bestIn && nd < bestDist)) {
+      bestIn = inRange
+      bestDist = nd
+      best = s
+    }
+  }
+  return best ? { code: best.id, name: best.name, inRange: bestIn } : null
+}
+
+const cToC = (t) => (t?.unit === 'fahrenheit' ? +(((t.value - 32) * 5) / 9).toFixed(1) : t?.value ?? null)
+
 const recipes = []
 let hopEntries = 0
 let hopMatched = 0
@@ -69,9 +124,24 @@ for (const b of beers) {
     // 'ml' additions are liquid extracts; density ~1 makes grams a fair proxy
     const key = matchHop(h.name)
     countHopMatch(h.name, key)
-    hops.push({ name: h.name, key, g: +grams.toFixed(1), stage: classifyStage(h.add) })
+    hops.push({
+      name: h.name,
+      key,
+      g: +grams.toFixed(1),
+      stage: classifyStage(h.add),
+      timeMin: null, // DIY Dog records a phase, not minutes; the crawl carries time
+    })
   }
 
+  const vitals = {
+    og,
+    fg,
+    abv: b.abv ?? null,
+    ibu: b.ibu ?? null,
+    srm: srm != null ? +(+srm).toFixed(1) : null,
+  }
+  const mashStep = (b.method?.mash_temp ?? [])[0]
+  const mashC = cToC(mashStep?.temp)
   recipes.push({
     id: b.id,
     name: b.name,
@@ -79,13 +149,14 @@ for (const b of beers) {
     year: b.first_brewed ? +String(b.first_brewed).slice(-4) : null,
     family: classifyFamilyFromTexts(b.tagline, b.name, b.description),
     origin: 'diydog',
-    vitals: {
-      og,
-      fg,
-      abv: b.abv ?? null,
-      ibu: b.ibu ?? null,
-      srm: srm != null ? +(+srm).toFixed(1) : null,
-    },
+    vitals,
+    attenuation: attenuationOf(og, fg),
+    styleGuess: matchStyle(vitals),
+    // some source entries carry a 0°C mash step (missing data) — drop those
+    mash: mashC && mashC > 0 ? { tempC: mashC, durationMin: mashStep.duration ?? null } : null,
+    fermentTempC: cToC(b.method?.fermentation?.temp),
+    method: null, // all-grain/extract & efficiency: populated by the crawl
+    efficiency: null,
     batchL,
     malts,
     hops,
@@ -115,9 +186,22 @@ if (existsSync(bfFile)) {
     const hops = (r.hops ?? []).map((h) => {
       const key = matchHop(h.name)
       countHopMatch(h.name, key)
-      return { name: h.name, key, g: +(+h.g).toFixed(1), stage: h.stage ?? classifyStage(h.use) }
+      return {
+        name: h.name,
+        key,
+        g: +(+h.g).toFixed(1),
+        stage: h.stage ?? classifyStage(h.use),
+        timeMin: h.timeMin ?? h.time ?? null,
+      }
     })
     bfCount++
+    const bfVitals = {
+      og: normGravity(r.vitals?.og),
+      fg: normGravity(r.vitals?.fg),
+      abv: r.vitals?.abv ?? null,
+      ibu: r.vitals?.ibu ?? null,
+      srm: r.vitals?.srm != null ? +(+r.vitals.srm).toFixed(1) : null,
+    }
     recipes.push({
       id: 100000 + bfCount, // corpus ids stay unique across origins
       name: r.name,
@@ -125,13 +209,13 @@ if (existsSync(bfFile)) {
       year: r.year ?? null,
       family: classifyFamilyFromTexts(r.style, r.name),
       origin: 'brewersfriend',
-      vitals: {
-        og: normGravity(r.vitals?.og),
-        fg: normGravity(r.vitals?.fg),
-        abv: r.vitals?.abv ?? null,
-        ibu: r.vitals?.ibu ?? null,
-        srm: r.vitals?.srm != null ? +(+r.vitals.srm).toFixed(1) : null,
-      },
+      vitals: bfVitals,
+      attenuation: attenuationOf(bfVitals.og, bfVitals.fg),
+      styleGuess: matchStyle(bfVitals),
+      mash: r.mash ?? (r.mashTempC != null ? { tempC: r.mashTempC, durationMin: r.mashDurationMin ?? null } : null),
+      fermentTempC: r.fermentTempC ?? null,
+      method: r.method ?? null,
+      efficiency: r.efficiency ?? null,
       batchL: r.batchL ?? null,
       malts: finishMalts((r.malts ?? []).map((m) => ({ name: m.name, kg: +m.kg }))),
       hops,
