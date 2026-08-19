@@ -4,8 +4,12 @@ dist
 .DS_Store
 src/generated
 
-# crawled/synced recipe data (personal or permission-gated; never committed)
-data/brewersfriend
+# crawled/synced recipe data. The parsed recipe corpus (recipes.jsonl) IS
+# committed so Vercel's build:data folds it into recipes.json at deploy time
+# (the site is built from committed sources — it can't see your local files).
+# The raw page cache and crawl checkpoint stay local-only.
+data/brewersfriend/*
+!data/brewersfriend/recipes.jsonl
 data/brewfather
 
 # local DuckDB corpus database built by scripts/build-corpus.mjs (can be GBs)

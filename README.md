@@ -110,9 +110,18 @@ public recipe listings under an access arrangement with Brewer's Friend
 10) — set it to whatever rate they approve. It fetches serially, backs off
 60s on 429/503, caches every page under `data/brewersfriend/cache/`, and
 prefers each recipe's stable BeerXML export over HTML scraping. Output lands
-in `data/brewersfriend/recipes.jsonl` (git-ignored), and `npm run build:data`
-folds it into the Ingredients corpus automatically with `origin:
-'brewersfriend'`.
+in `data/brewersfriend/recipes.jsonl`, and `npm run build:data` folds it into
+the recipe corpus automatically with `origin: 'brewersfriend'`.
+
+**Deploying crawled recipes.** The site is built on Vercel from *committed*
+sources — `build:data` regenerates `src/generated/recipes.json` from the raw
+data in the repo, so it only sees recipes that are checked in. The parsed
+corpus `data/brewersfriend/recipes.jsonl` is therefore **committed** (the raw
+page cache under `cache/` and the crawl `progress.json` stay git-ignored). To
+publish new crawled recipes: run the crawl, then
+`git add data/brewersfriend/recipes.jsonl && git commit && git push` — Vercel's
+build folds them into the deployed corpus. Note this makes the parsed recipe
+data (names, vitals, ingredients, source URLs) public in this repo.
 
 *Crash-safe resume*: a checkpoint at `data/brewersfriend/progress.json`
 records the last fully-processed listing page and any permanently-skipped
