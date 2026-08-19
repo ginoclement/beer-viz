@@ -123,6 +123,14 @@ publish new crawled recipes: run the crawl, then
 build folds them into the deployed corpus. Note this makes the parsed recipe
 data (names, vitals, ingredients, source URLs) public in this repo.
 
+*Recover from cache*: the crawler caches every fetched page, so recipes it
+already downloaded can be rebuilt into `recipes.jsonl` without re-crawling —
+`node scripts/crawl-brewersfriend.mjs --reprocess-cache` re-parses everything in
+`cache/` (BeerXML first, HTML fallback), dedupes by id, and preserves existing
+records. Use it when the append-only `recipes.jsonl` has fallen behind the cache
+(e.g. a git operation reset it while the cache kept growing); then
+`npm run build:data` folds the recovered recipes into the corpus.
+
 *Crash-safe resume*: a checkpoint at `data/brewersfriend/progress.json`
 records the last fully-processed listing page and any permanently-skipped
 recipe ids, written atomically after every page. If a crawl crashes or is

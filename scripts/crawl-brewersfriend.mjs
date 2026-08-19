@@ -11,6 +11,11 @@
 //                                  print the result; use this to calibrate
 //                                  the parser against real markup
 //   --parse-xml saved-recipe.xml   same for a saved BeerXML export
+//   --reprocess-cache              rebuild recipes.jsonl from every file already
+//                                  in cache/ (BeerXML first, HTML fallback),
+//                                  deduped by id and preserving existing
+//                                  records — recovers recipes that were fetched
+//                                  but are missing from recipes.jsonl
 //
 // Behavior:
 //   - serial requests, paced to --rpm requests per minute (default 10)
@@ -21,7 +26,7 @@
 //     to parsing the HTML page
 //   - appends normalized recipes to data/brewersfriend/recipes.jsonl;
 //     `npm run build:data` then folds them into the Ingredients corpus
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync } from 'node:fs'
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseListing, parseRecipePage, parseBeerXml } from './lib/brewersfriend.mjs'
@@ -62,6 +67,82 @@ if (parseFile || parseXmlFile) {
       : '\nLooks complete. The parser handles this page shape.',
   )
   process.exit(problems.length ? 1 : 0)
+}
+
+// -------------------------------------------------- reprocess cache (offline)
+
+// Rebuild recipes.jsonl from everything already in cache/, without touching the
+// network. Use this to recover recipes that were fetched (and cached) but are
+// missing from recipes.jsonl — e.g. after the append-only file was reset by a
+// git operation while the cache kept the full set. Parses each cached recipe
+// (BeerXML first, HTML fallback), dedupes by id, and also preserves any
+// existing jsonl records whose page was never cached.
+if (args.includes('--reprocess-cache')) {
+  if (!existsSync(cacheDir)) {
+    console.error(`No cache at ${cacheDir} — nothing to reprocess.`)
+    process.exit(1)
+  }
+  const ids = new Set()
+  for (const f of readdirSync(cacheDir)) {
+    const m = f.match(/^(?:xml|html)-(.+)\.txt$/)
+    if (m) ids.add(m[1])
+  }
+  console.log(`reprocessing ${ids.size} cached recipe ids…`)
+
+  const byId = new Map()
+  // keep any existing jsonl records first (so ids not present in cache survive)
+  if (existsSync(outFile)) {
+    for (const line of readFileSync(outFile, 'utf8').split('\n')) {
+      try {
+        const r = JSON.parse(line)
+        if (r?.id) byId.set(String(r.id), r)
+      } catch {
+        /* skip partial line */
+      }
+    }
+  }
+  const beforeExisting = byId.size
+
+  let parsed = 0
+  let empty = 0
+  let done = 0
+  for (const id of ids) {
+    let recipe = null
+    const xmlPath = join(cacheDir, `xml-${id}.txt`)
+    const htmlPath = join(cacheDir, `html-${id}.txt`)
+    if (existsSync(xmlPath)) {
+      try {
+        recipe = parseBeerXml(readFileSync(xmlPath, 'utf8'), `${BASE}/homebrew/recipe/beerxml1.0/${id}`)
+      } catch {
+        /* fall through to HTML */
+      }
+    }
+    if ((!recipe || !recipe.malts?.length) && existsSync(htmlPath)) {
+      try {
+        recipe = parseRecipePage(readFileSync(htmlPath, 'utf8'), `${BASE}/homebrew/recipe/view/${id}/`)
+      } catch {
+        /* leave recipe as-is */
+      }
+    }
+    if (!recipe?.name || !recipe.malts?.length) {
+      empty++
+    } else {
+      recipe.id = id
+      recipe.url = recipe.url || `${BASE}/homebrew/recipe/view/${id}/`
+      byId.set(String(id), recipe)
+      parsed++
+    }
+    if (++done % 2000 === 0) console.log(`  …${done}/${ids.size}`)
+  }
+
+  const records = [...byId.values()]
+  writeFileSync(outFile, records.map((r) => JSON.stringify(r)).join('\n') + '\n')
+  console.log(
+    `\nreprocessed cache: ${parsed} recipes parsed from cache, ${empty} unparseable, ` +
+      `${beforeExisting} pre-existing jsonl records preserved → ${records.length} total in ${outFile}`,
+  )
+  console.log('run `npm run build:data` to fold them into the corpus.')
+  process.exit(0)
 }
 
 // ------------------------------------------------------------------ settings
