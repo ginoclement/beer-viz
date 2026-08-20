@@ -1,22 +1,28 @@
 # beer-api: read-only DuckDB query API for the per-recipe views.
 #
-# Reachable only over the shared external "apis" network (via cloudflared) —
-# no host ports are published. Build the data first, then bring it up:
+# Run from the repo root — paths are repo-relative, so no `cd` juggling:
 #
-#   npm ci && npm run build:db          # produces ../../data/{beer.duckdb,aggregates.json}
+#   docker network create apis                       # shared network, one time
+#   npm --prefix apps/beer-api ci
+#   npm --prefix apps/beer-api run build:db          # -> ./data/{beer.duckdb,aggregates.json}
 #   docker compose up -d --build
 #
-# The served DB lives in the repo's single canonical data dir (../../data), the
-# same one the build pipeline writes to — not a second copy nested under the
-# app. On a host where the data lives elsewhere (e.g. the cluster), point the
-# mount at it with DATA_DIR=/abs/path (see the volume below).
+# The container mounts the repo's single canonical data dir (./data) — the same
+# one the build pipeline and build:db write to, not a second copy nested under
+# the app. On a host that doesn't hold the repo (e.g. the cluster, where you
+# rsync just the DB), point the mount at wherever the files landed:
 #
-# To publish a fresh crawl: rebuild the data, then `docker compose restart`
-# (the DB file is swapped; the container reopens it read-only).
+#   DATA_DIR=/srv/beer docker compose up -d
+#
+# To publish a fresh crawl: rebuild the data, then `docker compose restart
+# beer-api` (the DB file is swapped; the container reopens it read-only).
+#
+# cloudflared (the public entry point) is separate shared infra — bring it up
+# once from infra/cloudflared/; it fronts this and any other app on the network.
 
 services:
   beer-api:
-    build: .
+    build: ./apps/beer-api
     image: beer-api:latest
     container_name: beer-api
     restart: unless-stopped
@@ -32,7 +38,7 @@ services:
     volumes:
       # Repo's single canonical data dir → /data (read-only). Override with an
       # absolute host path on machines that don't hold the repo: DATA_DIR=/srv/beer.
-      - ${DATA_DIR:-../../data}:/data:ro
+      - ${DATA_DIR:-./data}:/data:ro
     networks:
       apis:
         aliases:

@@ -45,10 +45,10 @@ edge (most queries never hit the server twice).
 # from the repo root: make sure the generated data exists
 npm run build:data                 # -> src/generated/{corpus,recipeProjection,aggregates}.json
 
-cd apps/beer-api
-npm ci
-npm run build:db                   # -> ../../data/beer.duckdb + ../../data/aggregates.json
-npm start                          # local: http://localhost:8080/beer/health
+# build the query DB into the repo's canonical ./data dir
+npm --prefix apps/beer-api ci
+npm --prefix apps/beer-api run build:db   # -> ./data/beer.duckdb + ./data/aggregates.json
+npm --prefix apps/beer-api start          # local: http://localhost:8080/beer/health
 ```
 
 Config via env: `PORT`, `BASE_PATH` (`/beer` behind path routing, `""` for a
@@ -59,10 +59,15 @@ frontend origin in prod), `POOL_SIZE`.
 ## Deploy (Docker + Cloudflare Tunnel)
 
 ```bash
+# from the repo root
 docker network create apis                 # shared network, one time
-cd apps/beer-api && npm ci && npm run build:db
+npm --prefix apps/beer-api ci && npm --prefix apps/beer-api run build:db
 docker compose up -d --build               # joins "apis"; no host ports
 ```
+
+The compose file lives at the repo root (`docker-compose.yml`) and mounts the
+canonical `./data` dir. On a host without the repo, point it elsewhere with
+`DATA_DIR=/abs/path docker compose up -d`.
 
 Then bring up the tunnel in `infra/cloudflared/` (see its README). cloudflared
 routes `apis.ginoclement.com/beer/*` → `http://beer-api:8080`. Verify end to end:
