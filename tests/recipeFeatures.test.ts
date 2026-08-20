@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { buildRecipeFeatureSpace } from '../src/lib/recipeFeatures'
-import { CORPUS } from '../src/lib/ingredients'
+import type { CorpusRecipe } from '../src/lib/ingredients'
+import corpusJson from '../src/generated/corpus.json'
 import { NUMERIC_FEATURE_NAMES } from '../src/lib/features'
 import { MALT_CLASS_ORDER } from '../src/lib/ingredients'
+
+// The app no longer bundles the corpus (the views fetch it from the beer-api);
+// these build-time tests read the generated slim corpus directly.
+const CORPUS = (corpusJson as unknown as { recipes: CorpusRecipe[] }).recipes
 // @ts-ignore - plain-JS build helper, exercised here without a declaration file
 import { buildRecipeProjections, BLENDS } from '../scripts/lib/recipeProjection.mjs'
 

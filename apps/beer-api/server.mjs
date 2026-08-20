@@ -173,7 +173,7 @@ const routes = (fastify, _opts, done) => {
     const blend = [0, 0.5, 1].includes(num(req.query.blend)) ? num(req.query.blend) : 0.5
     const limit = clampInt(req.query.limit, 8000, 60000)
     const points = await query(
-      `SELECT r.id, r.name, r.family, r.style_code, r.abv, r.srm, p.x, p.y, p.z
+      `SELECT r.id, r.name, r.family, r.style_code, r.abv, r.ibu, r.srm, p.x, p.y, p.z
        FROM projection p JOIN recipes r ON r.id = p.recipe_id
        WHERE p.method = $1 AND p.blend = $2
        ORDER BY hash(p.recipe_id)

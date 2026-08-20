@@ -2,8 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
-import { CORPUS, type CorpusRecipe } from '../lib/ingredients'
-import projectionData from '../generated/recipeProjection.json'
+import type { CorpusRecipe } from '../lib/ingredients'
+import {
+  apiEnabled,
+  fetchMeta,
+  fetchProjection,
+  fetchRecipeDetail,
+  projPointToRecipe,
+  detailToRecipe,
+} from '../lib/api'
+import { loadLocalCorpus, loadLocalProjection, type Coords } from '../lib/localData'
 import { srmToHex } from '../lib/srm'
 import { GristBar, HopScheduleList } from '../components/IngredientBill'
 import SidePanel from '../components/SidePanel'
@@ -11,28 +19,12 @@ import ChartHelp from '../components/ChartHelp'
 
 type ColorMode = 'family' | 'srm' | 'abv'
 type ProjMethod = 'pca' | 'umap'
-type Coords = [number, number, number][]
 
-// Coordinates are precomputed at build time (scripts/build-projection.mjs) for
-// both methods and a few discrete "vitals ⇄ ingredients" blends, so the browser
-// renders thousands of points instantly instead of running PCA/UMAP live.
-const PROJ = projectionData as unknown as {
-  ids: number[]
-  pca: Record<string, Coords>
-  umap: Record<string, Coords> | null
-  explained: Record<string, number[]>
-}
+// The projection is precomputed at build time (scripts/build-projection.mjs)
+// for both methods and a few discrete "vitals ⇄ ingredients" blends. In API
+// mode the beer-api serves a sampled slice; offline we read the bundled file.
 const BLENDS = [0, 0.5, 1]
 const nearestBlend = (b: number) => BLENDS.reduce((p, c) => (Math.abs(c - b) < Math.abs(p - b) ? c : p), 0.5)
-
-// Stable family → color map over the corpus, so the legend and points agree.
-// There are ~15 families — more than the 8-step categorical palette — so we
-// spread evenly around the hue wheel to give every family a distinct color.
-const FAMILIES = [...new Set(CORPUS.map((r) => r.family))].sort()
-const familyColor = (f: string) => {
-  const i = Math.max(0, FAMILIES.indexOf(f))
-  return `hsl(${Math.round((i / FAMILIES.length) * 360)}, 60%, 60%)`
-}
 
 // ABV gradient: pale straw → deep amber, matched to the app's warm palette.
 function abvColor(abv: number, lo: number, hi: number): string {
@@ -175,34 +167,133 @@ function RecipeDetail({ recipe }: { recipe: CorpusRecipe }) {
   )
 }
 
-// The recipe set is fixed (the full-vitals recipes the projection was built
-// over), in the same order as every coordinate array.
-const PROJ_RECIPES: CorpusRecipe[] = (() => {
-  const byId = new Map(CORPUS.map((r) => [r.id, r]))
-  return PROJ.ids.map((id) => byId.get(id)).filter((r): r is CorpusRecipe => !!r)
-})()
+interface SpaceData {
+  recipes: CorpusRecipe[]
+  points: Coords
+  explained?: number[]
+}
 
 export default function RecipeSpaceView() {
-  const hasUmap = !!PROJ.umap
   const [method, setMethod] = useState<ProjMethod>('pca')
   const [colorMode, setColorMode] = useState<ColorMode>('family')
   const [blend, setBlend] = useState(0.5)
   const [hover, setHover] = useState<Hover | null>(null)
   const [selected, setSelected] = useState<number>(-1)
 
-  // Coordinates are looked up from the precomputed projection — no PCA/UMAP in
-  // the browser. The blend control snaps to the discrete precomputed levels.
+  const [families, setFamilies] = useState<string[]>([])
+  const [hasUmap, setHasUmap] = useState(false)
+  const [data, setData] = useState<SpaceData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [detail, setDetail] = useState<CorpusRecipe | null>(null)
+
+  // Stable family → color map. There are ~15 families — more than the 8-step
+  // categorical palette — so we spread evenly around the hue wheel.
+  const familyColor = useMemo(() => {
+    return (f: string) => {
+      const i = Math.max(0, families.indexOf(f))
+      return `hsl(${Math.round((i / Math.max(1, families.length)) * 360)}, 60%, 60%)`
+    }
+  }, [families])
+
+  // Discover availability once: families (stable colors) and UMAP presence.
+  useEffect(() => {
+    let ok = true
+    ;(async () => {
+      try {
+        if (apiEnabled) {
+          const meta = await fetchMeta()
+          if (!ok) return
+          setFamilies([...new Set(meta.families.map((f) => f.family))].sort())
+          setHasUmap(meta.projection.some((p) => p.method === 'umap'))
+        } else {
+          const [corpus, proj] = await Promise.all([loadLocalCorpus(), loadLocalProjection()])
+          if (!ok) return
+          setFamilies([...new Set(corpus.recipes.map((r) => r.family))].sort())
+          setHasUmap(!!proj.umap)
+        }
+      } catch (e) {
+        if (ok) setError(String(e))
+      }
+    })()
+    return () => {
+      ok = false
+    }
+  }, [])
+
   const blendKey = String(nearestBlend(blend))
-  const recipes = PROJ_RECIPES
-  const projection = useMemo(() => {
-    const table = method === 'umap' && PROJ.umap ? PROJ.umap : PROJ.pca
-    return {
-      points: table[blendKey] ?? PROJ.pca[blendKey],
-      explainedVariance: method === 'pca' ? PROJ.explained[blendKey] : undefined,
+
+  // Load the point cloud for the current (method, blend).
+  useEffect(() => {
+    let ok = true
+    const ctrl = new AbortController()
+    setLoading(true)
+    setError(null)
+    ;(async () => {
+      try {
+        if (apiEnabled) {
+          const res = await fetchProjection(method, nearestBlend(blend), 8000, ctrl.signal)
+          if (!ok) return
+          setData({
+            recipes: res.points.map(projPointToRecipe),
+            points: res.points.map((p) => [p.x, p.y, p.z]) as Coords,
+          })
+        } else {
+          const [corpus, proj] = await Promise.all([loadLocalCorpus(), loadLocalProjection()])
+          if (!ok) return
+          const byId = new Map(corpus.recipes.map((r) => [r.id, r]))
+          const table = method === 'umap' && proj.umap ? proj.umap : proj.pca
+          const coords = table[blendKey] ?? proj.pca[blendKey]
+          // Keep recipes aligned to coords: index by the projection's id order.
+          const recipes: CorpusRecipe[] = []
+          const points: Coords = []
+          proj.ids.forEach((id, i) => {
+            const r = byId.get(id)
+            if (r && coords[i]) {
+              recipes.push(r)
+              points.push(coords[i])
+            }
+          })
+          setData({ recipes, points, explained: method === 'pca' ? proj.explained[blendKey] : undefined })
+        }
+      } catch (e) {
+        if (ok && (e as { name?: string })?.name !== 'AbortError') setError(String(e))
+      } finally {
+        if (ok) setLoading(false)
+      }
+    })()
+    return () => {
+      ok = false
+      ctrl.abort()
     }
   }, [method, blendKey])
 
+  const recipes = data?.recipes ?? []
+  const points = data?.points ?? []
+
+  // Resolve the selected recipe's full detail (grain bill + hops). Offline the
+  // loaded recipe is already complete; in API mode we fetch /recipe/:id.
+  useEffect(() => {
+    if (selected < 0 || selected >= recipes.length) {
+      setDetail(null)
+      return
+    }
+    const light = recipes[selected]
+    setDetail(light)
+    if (!apiEnabled) return
+    let ok = true
+    fetchRecipeDetail(light.id)
+      .then((d) => {
+        if (ok) setDetail(detailToRecipe(d))
+      })
+      .catch(() => {})
+    return () => {
+      ok = false
+    }
+  }, [selected, recipes])
+
   const abvRange = useMemo(() => {
+    if (!recipes.length) return [0, 12] as [number, number]
     const vals = recipes.map((r) => r.vitals.abv ?? 0)
     return [Math.min(...vals), Math.max(...vals)] as [number, number]
   }, [recipes])
@@ -213,15 +304,14 @@ export default function RecipeSpaceView() {
       if (colorMode === 'abv') return new THREE.Color(abvColor(r.vitals.abv ?? 0, abvRange[0], abvRange[1]))
       return new THREE.Color(familyColor(r.family))
     })
-  }, [recipes, colorMode, abvRange])
+  }, [recipes, colorMode, abvRange, familyColor])
 
   // clamp selection when the recipe set changes size
   useEffect(() => {
     if (selected >= recipes.length) setSelected(-1)
   }, [recipes.length, selected])
 
-  const hovered = hover ? recipes[hover.index] : null
-  const selectedRecipe = selected >= 0 ? recipes[selected] : null
+  const hovered = hover && recipes[hover.index] ? recipes[hover.index] : null
 
   const familyCounts = useMemo(() => {
     const c = new Map<string, number>()
@@ -278,7 +368,7 @@ export default function RecipeSpaceView() {
             <span className="val">{blend === 0 ? 'vitals' : blend === 1 ? 'ingredients' : 'balanced'}</span>
           </label>
           <span className="ctl" style={{ color: 'var(--muted)', fontSize: 12 }}>
-            {recipes.length.toLocaleString()} recipes
+            {loading ? 'loading…' : `${recipes.length.toLocaleString()} recipes`}
           </span>
         </div>
         <div className="canvas-wrap">
@@ -302,8 +392,7 @@ export default function RecipeSpaceView() {
               <p>
                 Drag to orbit, scroll to zoom, hover for a recipe's vitals, click a point for
                 its full grain bill and hop schedule. Recolor by family, actual beer color
-                (SRM), or strength to surface different patterns. Built to scale to thousands
-                of recipes once the crawl lands.
+                (SRM), or strength to surface different patterns.
               </p>
             </ChartHelp>
           </div>
@@ -314,7 +403,7 @@ export default function RecipeSpaceView() {
             <directionalLight position={[-4, -2, -3]} intensity={0.35} />
             <CameraRig />
             <RecipePoints
-              points={projection.points}
+              points={points}
               colors={colors}
               onHover={setHover}
               onSelect={setSelected}
@@ -322,6 +411,11 @@ export default function RecipeSpaceView() {
             />
             <OrbitControls enableDamping dampingFactor={0.12} makeDefault />
           </Canvas>
+          {(loading || error) && (
+            <div className="overlay-note" style={{ position: 'absolute', top: 16, left: 16, background: 'rgba(0,0,0,0.6)', padding: '6px 10px', borderRadius: 6, fontSize: 13, color: error ? '#ff9b9b' : 'var(--muted)' }}>
+              {error ? `Couldn't load recipes: ${error}` : 'Loading recipe space…'}
+            </div>
+          )}
           {hover && hovered && (
             <div className="tooltip3d" style={{ left: hover.x, top: hover.y }}>
               <div className="t-name">{hovered.name}</div>
@@ -370,18 +464,20 @@ export default function RecipeSpaceView() {
               </div>
             )}
             <div className="note">
-              {method === 'pca' && projection.explainedVariance
+              {method === 'pca' && data?.explained
                 ? `PCA: axes capture ${Math.round(
-                    (projection.explainedVariance[0] + projection.explainedVariance[1] + projection.explainedVariance[2]) * 100,
+                    (data.explained[0] + data.explained[1] + data.explained[2]) * 100,
                   )}% of variance across ${recipes.length} recipes`
-                : `UMAP layout of ${recipes.length} recipes — proximity is meaningful, axes are not`}
+                : method === 'pca'
+                  ? `PCA layout of ${recipes.length} recipes`
+                  : `UMAP layout of ${recipes.length} recipes — proximity is meaningful, axes are not`}
             </div>
           </div>
         </div>
       </div>
       <SidePanel>
-        {selectedRecipe ? (
-          <RecipeDetail recipe={selectedRecipe} />
+        {detail ? (
+          <RecipeDetail recipe={detail} />
         ) : (
           <div className="detail">
             <h2>The recipe space</h2>
@@ -398,7 +494,6 @@ export default function RecipeSpaceView() {
             </p>
             <p style={{ color: 'var(--muted)' }}>
               Recolor by family, actual beer color, or strength to surface different patterns.
-              The layout is built to scale to thousands of recipes as the corpus grows.
             </p>
           </div>
         )}

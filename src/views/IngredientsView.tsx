@@ -1,8 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAnalysis } from '../state/useAnalysis'
 import {
-  CORPUS,
-  CORPUS_SOURCE,
   AGGREGATES,
   MALT_CLASS_ORDER,
   STAGES,
@@ -10,6 +8,8 @@ import {
   type CorpusRecipe,
   type HopAgg,
 } from '../lib/ingredients'
+import { apiEnabled, fetchRecipes, fetchRecipeDetail, rowToRecipe, detailToRecipe } from '../lib/api'
+import { loadLocalCorpus } from '../lib/localData'
 import { srmToHex } from '../lib/srm'
 import { GristBar, HopScheduleList } from '../components/IngredientBill'
 import ChartHelp from '../components/ChartHelp'
@@ -503,19 +503,63 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
   const families = AGGREGATES.families
   const famAgg = AGGREGATES.byFamily[family] ?? AGGREGATES.byFamily.all
 
-  // The scatter is the one per-recipe chart, so it still needs rows — but from
-  // the slim corpus, filtered client-side (the leaderboard/grist read rollups).
-  const recipes = useMemo(
-    () => (family === 'all' ? CORPUS : CORPUS.filter((r) => r.family === family)),
-    [family],
-  )
+  // The scatter is the one per-recipe chart, so it still needs rows. In API
+  // mode we fetch a bounded family sample from the beer-api; offline we lazy-
+  // load the bundled corpus and filter it (the leaderboard/grist read rollups).
+  const [recipes, setRecipes] = useState<CorpusRecipe[]>([])
+  const [detail, setDetail] = useState<CorpusRecipe | null>(null)
+
+  useEffect(() => {
+    let ok = true
+    const ctrl = new AbortController()
+    ;(async () => {
+      try {
+        if (apiEnabled) {
+          const res = await fetchRecipes(
+            { family: family === 'all' ? undefined : family, limit: 500 },
+            ctrl.signal,
+          )
+          if (ok) setRecipes(res.recipes.map(rowToRecipe))
+        } else {
+          const corpus = await loadLocalCorpus()
+          if (ok) setRecipes(family === 'all' ? corpus.recipes : corpus.recipes.filter((r) => r.family === family))
+        }
+      } catch {
+        /* the scatter simply shows fewer points */
+      }
+    })()
+    return () => {
+      ok = false
+      ctrl.abort()
+    }
+  }, [family])
+
+  // Full detail (grain bill + hops) for the clicked dot.
+  useEffect(() => {
+    if (selectedRecipe == null) {
+      setDetail(null)
+      return
+    }
+    const cand = recipes.find((r) => r.id === selectedRecipe) ?? null
+    setDetail(cand)
+    if (!apiEnabled || !cand) return
+    let ok = true
+    fetchRecipeDetail(selectedRecipe)
+      .then((d) => {
+        if (ok) setDetail(detailToRecipe(d))
+      })
+      .catch(() => {})
+    return () => {
+      ok = false
+    }
+  }, [selectedRecipe, recipes])
 
   const pickHop = (key: string) => {
     setHopKey(key)
     goToHops?.()
   }
 
-  const selected = selectedRecipe != null ? CORPUS.find((r) => r.id === selectedRecipe) : null
+  const selected = detail
 
   return (
     <div className="view">
@@ -559,7 +603,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
             <p>
               The style guidelines tell you what a beer should taste like;{' '}
               this tab shows what brewers actually put in the kettle. Every chart is
-              computed from {CORPUS.length} published commercial recipes with complete
+              computed from {AGGREGATES.totalRecipes} published commercial recipes with complete
               grain bills, hop schedules, and yeast.
             </p>
             <p>
@@ -572,7 +616,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
               exports) now carry their full ingredient bills in with them.
             </p>
             <h3>Source</h3>
-            <p style={{ fontSize: 12, color: 'var(--muted)' }}>{CORPUS_SOURCE}. Recipes © BrewDog, published for homebrewers.</p>
+            <p style={{ fontSize: 12, color: 'var(--muted)' }}>{AGGREGATES.source}. Recipes © BrewDog, published for homebrewers.</p>
           </div>
         )}
       </SidePanel>

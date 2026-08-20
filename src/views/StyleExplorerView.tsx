@@ -1,6 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAnalysis } from '../state/useAnalysis'
-import { CORPUS, type CorpusRecipe } from '../lib/ingredients'
+import { type CorpusRecipe } from '../lib/ingredients'
+import {
+  apiEnabled,
+  fetchRecipes,
+  fetchRecipeDetail,
+  rowToRecipe,
+  detailToRecipe,
+  type VitalBounds,
+} from '../lib/api'
+import { loadLocalCorpus } from '../lib/localData'
 import { srmToHex } from '../lib/srm'
 import { GristBar, HopScheduleList } from '../components/IngredientBill'
 import SidePanel from '../components/SidePanel'
@@ -38,7 +47,51 @@ export default function StyleExplorerView() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [hoverId, setHoverId] = useState<number | null>(null)
 
+  // Candidate recipes to test for membership. In API mode we ask the beer-api
+  // for recipes already inside the tolerance-widened window (a bounded page);
+  // offline we lazy-load the bundled corpus and filter it here.
+  const [candidates, setCandidates] = useState<CorpusRecipe[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [detail, setDetail] = useState<CorpusRecipe | null>(null)
+
   const style = eligibleStyles.find((s) => s.id === styleId) ?? eligibleStyles[0]
+
+  useEffect(() => {
+    let ok = true
+    const ctrl = new AbortController()
+    setLoading(true)
+    setError(null)
+    ;(async () => {
+      try {
+        if (apiEnabled) {
+          if (!style) return
+          const bounds: VitalBounds = {}
+          for (const a of AXES) {
+            const [lo, hi] = style.stats[a.key] as [number, number]
+            const w = hi - lo || 1e-9
+            bounds[`${a.key}Min`] = lo - tol * w
+            bounds[`${a.key}Max`] = hi + tol * w
+          }
+          const res = await fetchRecipes({ ...bounds, limit: 500 }, ctrl.signal)
+          if (!ok) return
+          setCandidates(res.recipes.map(rowToRecipe))
+        } else {
+          const corpus = await loadLocalCorpus()
+          if (!ok) return
+          setCandidates(corpus.recipes)
+        }
+      } catch (e) {
+        if (ok && (e as { name?: string })?.name !== 'AbortError') setError(String(e))
+      } finally {
+        if (ok) setLoading(false)
+      }
+    })()
+    return () => {
+      ok = false
+      ctrl.abort()
+    }
+  }, [style, tol])
 
   // Membership: a recipe is "in range" when every vital sits inside the
   // style's published range widened by the tolerance fraction of the range.
@@ -50,7 +103,7 @@ export default function StyleExplorerView() {
     >
 
     const matches: { r: CorpusRecipe; fit: number }[] = []
-    for (const r of CORPUS) {
+    for (const r of candidates) {
       if (!hasAllVitals(r)) continue
       let ok = true
       let fit = 0
@@ -85,7 +138,28 @@ export default function StyleExplorerView() {
       domains[a.key] = [dmin - pad, dmax + pad]
     }
     return { matches, domains }
-  }, [style, tol])
+  }, [style, tol, candidates])
+
+  // Resolve the selected recipe's full detail (grain bill + hops). Offline the
+  // candidate is already complete; in API mode we fetch /recipe/:id on click.
+  useEffect(() => {
+    if (selectedId == null) {
+      setDetail(null)
+      return
+    }
+    const cand = candidates.find((r) => r.id === selectedId) ?? null
+    setDetail(cand)
+    if (!apiEnabled || !cand) return
+    let ok = true
+    fetchRecipeDetail(selectedId)
+      .then((d) => {
+        if (ok) setDetail(detailToRecipe(d))
+      })
+      .catch(() => {})
+    return () => {
+      ok = false
+    }
+  }, [selectedId, candidates])
 
   if (!style) return null
 
@@ -119,7 +193,7 @@ export default function StyleExplorerView() {
     return [...top, ...bot].join(' ')
   }
 
-  const selected = selectedId != null ? CORPUS.find((r) => r.id === selectedId) ?? null : null
+  const selected = detail
   const active = hoverId ?? selectedId
 
   return (
@@ -142,8 +216,12 @@ export default function StyleExplorerView() {
             <input type="range" min={0} max={0.5} step={0.05} value={tol} onChange={(e) => setTol(Number(e.target.value))} />
             <span className="val">±{Math.round(tol * 100)}%</span>
           </label>
-          <span className="ctl" style={{ color: 'var(--muted)', fontSize: 12 }}>
-            {matches.length} recipe{matches.length === 1 ? '' : 's'} in range
+          <span className="ctl" style={{ color: error ? '#ff9b9b' : 'var(--muted)', fontSize: 12 }}>
+            {error
+              ? `Couldn't load recipes`
+              : loading
+                ? 'loading…'
+                : `${matches.length} recipe${matches.length === 1 ? '' : 's'} in range`}
           </span>
         </div>
         <div className="stage">
@@ -235,7 +313,7 @@ export default function StyleExplorerView() {
             })}
             {active != null &&
               (() => {
-                const r = CORPUS.find((x) => x.id === active)
+                const r = candidates.find((x) => x.id === active)
                 if (!r || !hasAllVitals(r)) return null
                 return (
                   <path

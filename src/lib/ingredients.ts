@@ -1,4 +1,3 @@
-import corpusJson from '../generated/corpus.json'
 import aggregatesJson from '../generated/aggregates.json'
 import { SERIES } from './palette'
 
@@ -67,11 +66,10 @@ export interface CorpusRecipe {
   roast?: number
 }
 
-// The app reads the SLIM corpus + precomputed aggregates, never the fat
-// recipes.json — so the browser bundle stays small as the corpus grows.
-const data = corpusJson as unknown as { source: string; recipes: CorpusRecipe[] }
-export const CORPUS_SOURCE = data.source
-export const CORPUS: CorpusRecipe[] = data.recipes
+// Per-recipe data is no longer bundled: the views fetch it from the beer-api
+// when VITE_BEER_API_BASE is set, and lazy-load the bundled corpus.json only as
+// an offline fallback (see lib/api.ts, lib/localData.ts). Aggregates stay
+// static — they're bounded and small no matter how big the corpus grows.
 
 // ------------------------------------------------- precomputed aggregates
 
