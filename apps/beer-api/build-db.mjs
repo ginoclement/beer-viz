@@ -105,7 +105,15 @@ await db.run(`
 await db.run(`DROP TABLE _raw;`)
 
 console.log('loading projection …')
-await db.run(`CREATE TABLE projection AS SELECT * FROM read_json_auto('${esc(projNdjson)}');`)
+// Explicit column types: the NDJSON is grouped by blend, so with a corpus
+// larger than read_json_auto's sampling window every sampled row has
+// blend=0 and the column gets inferred as BIGINT — silently flattening
+// 0.5 and making `WHERE blend = 0.5` match nothing.
+await db.run(`
+  CREATE TABLE projection AS SELECT * FROM read_json('${esc(projNdjson)}', columns = {
+    recipe_id: 'BIGINT', method: 'VARCHAR', blend: 'DOUBLE',
+    x: 'DOUBLE', y: 'DOUBLE', z: 'DOUBLE'
+  });`)
 
 // Point lookups (detail, joins) benefit from an index; range filters ride
 // DuckDB's automatic min/max zonemaps.

@@ -235,14 +235,24 @@ export default function RecipeSpaceView() {
     setError(null)
     ;(async () => {
       try {
+        // A healthy API should never serve an empty projection (seen once
+        // with a mistyped blend column in the DB) — fall back to the
+        // bundled snapshot for this view rather than rendering nothing.
+        let apiServed = false
         if (apiLive) {
           const res = await fetchProjection(method, nearestBlend(blend), 8000, ctrl.signal)
           if (!ok) return
-          setData({
-            recipes: res.points.map(projPointToRecipe),
-            points: res.points.map((p) => [p.x, p.y, p.z]) as Coords,
-          })
-        } else {
+          if (res.points.length > 0) {
+            apiServed = true
+            setData({
+              recipes: res.points.map(projPointToRecipe),
+              points: res.points.map((p) => [p.x, p.y, p.z]) as Coords,
+            })
+          } else {
+            console.warn('beer-api returned an empty projection — using bundled snapshot')
+          }
+        }
+        if (!apiServed) {
           const [corpus, proj] = await Promise.all([loadLocalCorpus(), loadLocalProjection()])
           if (!ok) return
           const byId = new Map(corpus.recipes.map((r) => [r.id, r]))
