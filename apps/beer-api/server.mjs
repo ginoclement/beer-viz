@@ -9,8 +9,9 @@
 //   PORT         listen port (default 8080)
 //   BASE_PATH    URL prefix, e.g. "/beer" behind cloudflared path routing, or
 //                "" when it has its own subdomain (default "")
-//   DB_PATH      the DuckDB file built by build-db.mjs (default ./data/beer.duckdb)
-//   AGG_PATH     aggregates.json to serve at /aggregates (default ./data/aggregates.json)
+//   DATA_DIR     dir holding the served DB + aggregates.json (default ../../data)
+//   DB_PATH      the DuckDB file built by build-db.mjs (default $DATA_DIR/beer.duckdb)
+//   AGG_PATH     aggregates.json to serve at /aggregates (default $DATA_DIR/aggregates.json)
 //   CORS_ORIGIN  comma-separated allowed origins, or "*" (default "*")
 //   POOL_SIZE    read connections (default 6)
 
@@ -24,8 +25,9 @@ import { DuckDBInstance } from '@duckdb/node-api'
 const here = dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT ?? 8080)
 const BASE_PATH = (process.env.BASE_PATH ?? '').replace(/\/$/, '')
-const DB_PATH = resolve(process.env.DB_PATH ?? join(here, 'data/beer.duckdb'))
-const AGG_PATH = resolve(process.env.AGG_PATH ?? join(here, 'data/aggregates.json'))
+const DATA_DIR = resolve(process.env.DATA_DIR ?? join(here, '../../data'))
+const DB_PATH = resolve(process.env.DB_PATH ?? join(DATA_DIR, 'beer.duckdb'))
+const AGG_PATH = resolve(process.env.AGG_PATH ?? join(DATA_DIR, 'aggregates.json'))
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? '*'
 const POOL_SIZE = Number(process.env.POOL_SIZE ?? 6)
 

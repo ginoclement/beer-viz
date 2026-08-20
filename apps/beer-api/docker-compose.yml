@@ -3,8 +3,13 @@
 # Reachable only over the shared external "apis" network (via cloudflared) —
 # no host ports are published. Build the data first, then bring it up:
 #
-#   npm ci && npm run build:db          # produces ./data/{beer.duckdb,aggregates.json}
+#   npm ci && npm run build:db          # produces ../../data/{beer.duckdb,aggregates.json}
 #   docker compose up -d --build
+#
+# The served DB lives in the repo's single canonical data dir (../../data), the
+# same one the build pipeline writes to — not a second copy nested under the
+# app. On a host where the data lives elsewhere (e.g. the cluster), point the
+# mount at it with DATA_DIR=/abs/path (see the volume below).
 #
 # To publish a fresh crawl: rebuild the data, then `docker compose restart`
 # (the DB file is swapped; the container reopens it read-only).
@@ -25,7 +30,9 @@ services:
       # Lock CORS to your frontend origin(s) in production, comma-separated.
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
     volumes:
-      - ./data:/data:ro
+      # Repo's single canonical data dir → /data (read-only). Override with an
+      # absolute host path on machines that don't hold the repo: DATA_DIR=/srv/beer.
+      - ${DATA_DIR:-../../data}:/data:ro
     networks:
       apis:
         aliases:

@@ -17,8 +17,13 @@ data/brewfather
 *.duckdb.wal
 data/corpus-aggregates.json
 
+# beer-api serving artifacts, built into the canonical data dir by build-db.mjs
+# (beer.duckdb is covered by *.duckdb above)
+data/aggregates.json
+data/projection.ndjson
+
 # cloudflare tunnel credentials — never commit
 infra/cloudflared/creds.json
 
-# beer-api build artifacts (the query DB is rebuilt from src/generated)
+# beer-api build artifacts if DATA_DIR is pointed back inside the app dir
 apps/beer-api/data/

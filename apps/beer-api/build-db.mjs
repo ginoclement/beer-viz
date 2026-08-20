@@ -6,7 +6,9 @@
 //
 //   GENERATED_DIR   where corpus.json / recipeProjection.json live
 //                   (default ../../src/generated)
-//   DB_PATH         output database (default ./data/beer.duckdb)
+//   DATA_DIR        where the served DB + aggregates.json are written
+//                   (default ../../data — the repo's one canonical data dir)
+//   DB_PATH         output database (default $DATA_DIR/beer.duckdb)
 //
 // Scales to the full corpus: DuckDB reads the JSON with read_json and stores it
 // columnar, so range filters over hundreds of thousands of recipes stay fast.
@@ -18,7 +20,8 @@ import { DuckDBInstance } from '@duckdb/node-api'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const GENERATED_DIR = resolve(process.env.GENERATED_DIR ?? join(here, '../../src/generated'))
-const DB_PATH = resolve(process.env.DB_PATH ?? join(here, 'data/beer.duckdb'))
+const DATA_DIR = resolve(process.env.DATA_DIR ?? join(here, '../../data'))
+const DB_PATH = resolve(process.env.DB_PATH ?? join(DATA_DIR, 'beer.duckdb'))
 const corpusPath = join(GENERATED_DIR, 'corpus.json')
 const projPath = join(GENERATED_DIR, 'recipeProjection.json')
 

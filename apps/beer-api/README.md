@@ -14,9 +14,12 @@ rows, never the whole set.
 
 ## Data model
 
-`build-db.mjs` builds `data/beer.duckdb` from the repo's generated JSON
+`build-db.mjs` builds `beer.duckdb` from the repo's generated JSON
 (`src/generated/corpus.json` + `recipeProjection.json`) and stages
-`aggregates.json` beside it. Tables: `recipes`, `recipe_malts`, `recipe_hops`,
+`aggregates.json` beside it, both in the repo's single canonical data dir
+(`../../data` — the same one the build pipeline writes to, not a second copy
+nested under the app). Point `DATA_DIR` elsewhere to override. Tables:
+`recipes`, `recipe_malts`, `recipe_hops`,
 `projection` (one row per recipe × method × blend). The DB is a disposable
 projection of the JSON — rebuild and swap the file to publish a new crawl; the
 API opens it read-only, so DuckDB's single-writer limit never applies.
@@ -44,13 +47,14 @@ npm run build:data                 # -> src/generated/{corpus,recipeProjection,a
 
 cd apps/beer-api
 npm ci
-npm run build:db                   # -> data/beer.duckdb + data/aggregates.json
+npm run build:db                   # -> ../../data/beer.duckdb + ../../data/aggregates.json
 npm start                          # local: http://localhost:8080/beer/health
 ```
 
 Config via env: `PORT`, `BASE_PATH` (`/beer` behind path routing, `""` for a
-subdomain), `DB_PATH`, `AGG_PATH`, `CORS_ORIGIN` (lock to your frontend origin in
-prod), `POOL_SIZE`.
+subdomain), `DATA_DIR` (the dir holding the DB + aggregates, default `../../data`),
+`DB_PATH`/`AGG_PATH` (override individual files), `CORS_ORIGIN` (lock to your
+frontend origin in prod), `POOL_SIZE`.
 
 ## Deploy (Docker + Cloudflare Tunnel)
 
