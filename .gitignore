@@ -4,6 +4,11 @@ dist
 .DS_Store
 src/generated
 
+# local env files (compose runtime + Vite build vars). .env.example is committed.
+.env
+.env.*
+!.env.example
+
 # crawled/synced recipe data. The parsed recipe corpus (recipes.jsonl) IS
 # committed so Vercel's build:data folds it into recipes.json at deploy time
 # (the site is built from committed sources — it can't see your local files).
