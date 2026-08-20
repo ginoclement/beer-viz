@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAnalysis } from '../state/useAnalysis'
 import {
-  AGGREGATES,
   MALT_CLASS_ORDER,
   STAGES,
   maltClassColor,
@@ -10,6 +9,7 @@ import {
 } from '../lib/ingredients'
 import { fetchRecipes, fetchRecipeDetail, rowToRecipe, detailToRecipe } from '../lib/api'
 import { useApiLive } from '../state/useApiLive'
+import { useAggregates } from '../state/useAggregates'
 import { loadLocalCorpus } from '../lib/localData'
 import { srmToHex } from '../lib/srm'
 import { GristBar, HopScheduleList } from '../components/IngredientBill'
@@ -121,21 +121,22 @@ function HopLeaderboard({
 
 function GristByFamily() {
   const [drill, setDrill] = useState<{ fam: string; cls: string } | null>(null)
+  const agg = useAggregates()
 
   // The grist chart always shows every family for comparison, from the
   // precomputed per-family grist rollup — no corpus iteration in the browser.
   const rows = useMemo(() => {
-    return AGGREGATES.families
+    return agg.families
       .filter(({ n }) => n >= 5)
       .map(({ family, n }) => {
-        const avg = AGGREGATES.byFamily[family].grist.byClass
+        const avg = agg.byFamily[family].grist.byClass
         return { fam: family, n, avg, dark: (avg['roasted'] ?? 0) + (avg['crystal & caramel'] ?? 0) }
       })
       .sort((a, b) => a.dark - b.dark)
-  }, [])
+  }, [agg])
 
-  const drillRows = drill ? AGGREGATES.byFamily[drill.fam]?.grist.breakdown[drill.cls] ?? [] : []
-  const drillCount = drill ? AGGREGATES.byFamily[drill.fam]?.grist.n ?? 0 : 0
+  const drillRows = drill ? agg.byFamily[drill.fam]?.grist.breakdown[drill.cls] ?? [] : []
+  const drillCount = drill ? agg.byFamily[drill.fam]?.grist.n ?? 0 : 0
   const drillMax = Math.max(...drillRows.map((r) => r.avgPct), 1)
 
   return (
@@ -279,10 +280,13 @@ type ScatterMode = 'hops' | 'roast'
 
 function OutcomeScatter({
   recipes,
+  total,
   selected,
   onSelect,
 }: {
   recipes: CorpusRecipe[]
+  /** how many recipes matched server-side, when only a sample was returned */
+  total?: number | null
   selected: number | null
   onSelect: (id: number) => void
 }) {
@@ -355,6 +359,9 @@ function OutcomeScatter({
         {mode === 'hops'
           ? 'Total hop dose (g/L) vs. measured bitterness — dots colored by beer color.'
           : 'Roasted-grain share of the grist vs. beer color (SRM, capped at 80).'}
+        {total != null && total > recipes.length
+          ? ` Showing a random sample of ${recipes.length.toLocaleString()} of ${total.toLocaleString()} recipes.`
+          : ''}
       </p>
       <span className="seg" style={{ marginBottom: 10, display: 'inline-flex' }}>
         <button className={mode === 'hops' ? 'active' : ''} onClick={() => setMode('hops')}>
@@ -501,13 +508,15 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
   const [family, setFamily] = useState<string>('all')
   const [selectedRecipe, setSelectedRecipe] = useState<number | null>(null)
 
-  const families = AGGREGATES.families
-  const famAgg = AGGREGATES.byFamily[family] ?? AGGREGATES.byFamily.all
+  const agg = useAggregates()
+  const families = agg.families
+  const famAgg = agg.byFamily[family] ?? agg.byFamily.all
 
   // The scatter is the one per-recipe chart, so it still needs rows. In API
   // mode we fetch a bounded family sample from the beer-api; offline we lazy-
   // load the bundled corpus and filter it (the leaderboard/grist read rollups).
   const [recipes, setRecipes] = useState<CorpusRecipe[]>([])
+  const [scatterTotal, setScatterTotal] = useState<number | null>(null)
   const [detail, setDetail] = useState<CorpusRecipe | null>(null)
 
   const apiLive = useApiLive()
@@ -519,13 +528,19 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
       try {
         if (apiLive) {
           const res = await fetchRecipes(
-            { family: family === 'all' ? undefined : family, limit: 500 },
+            { family: family === 'all' ? undefined : family, sort: 'random', limit: 2000 },
             ctrl.signal,
           )
-          if (ok) setRecipes(res.recipes.map(rowToRecipe))
+          if (ok) {
+            setRecipes(res.recipes.map(rowToRecipe))
+            setScatterTotal(res.total)
+          }
         } else {
           const corpus = await loadLocalCorpus()
-          if (ok) setRecipes(family === 'all' ? corpus.recipes : corpus.recipes.filter((r) => r.family === family))
+          if (ok) {
+            setRecipes(family === 'all' ? corpus.recipes : corpus.recipes.filter((r) => r.family === family))
+            setScatterTotal(null)
+          }
         }
       } catch {
         /* a failed API call flips apiLive and this effect re-runs offline */
@@ -571,7 +586,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
           <label className="ctl">
             Style family
             <select value={family} onChange={(e) => setFamily(e.target.value)} style={{ maxWidth: 240 }}>
-              <option value="all">All families ({AGGREGATES.totalRecipes})</option>
+              <option value="all">All families ({agg.totalRecipes.toLocaleString()})</option>
               {families.map(({ family: f, n }) => (
                 <option key={f} value={f}>
                   {f} ({n})
@@ -580,7 +595,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
             </select>
           </label>
           <span style={{ color: 'var(--muted)' }}>
-            {AGGREGATES.totalRecipes} recipes with full ingredient bills
+            {agg.totalRecipes.toLocaleString()} recipes with full ingredient bills
           </span>
         </div>
         <div className="charts">
@@ -588,7 +603,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
             <HopLeaderboard hops={famAgg.hops} recipeCount={famAgg.outcome.n} onPickHop={pickHop} />
           )}
           {page === 'outcome' && (
-            <OutcomeScatter recipes={recipes} selected={selectedRecipe} onSelect={setSelectedRecipe} />
+            <OutcomeScatter recipes={recipes} total={scatterTotal} selected={selectedRecipe} onSelect={setSelectedRecipe} />
           )}
           {page === 'grist' && <GristByFamily />}
         </div>
@@ -606,7 +621,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
             <p>
               The style guidelines tell you what a beer should taste like;{' '}
               this tab shows what brewers actually put in the kettle. Every chart is
-              computed from {AGGREGATES.totalRecipes} published commercial recipes with complete
+              computed from {agg.totalRecipes.toLocaleString()} published commercial recipes with complete
               grain bills, hop schedules, and yeast.
             </p>
             <p>
@@ -619,7 +634,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
               exports) now carry their full ingredient bills in with them.
             </p>
             <h3>Source</h3>
-            <p style={{ fontSize: 12, color: 'var(--muted)' }}>{AGGREGATES.source}. Recipes © BrewDog, published for homebrewers.</p>
+            <p style={{ fontSize: 12, color: 'var(--muted)' }}>{agg.source}. Recipes © BrewDog, published for homebrewers.</p>
           </div>
         )}
       </SidePanel>

@@ -183,6 +183,8 @@ export default function RecipeSpaceView() {
 
   const [families, setFamilies] = useState<string[]>([])
   const [hasUmap, setHasUmap] = useState(false)
+  const [projectedTotal, setProjectedTotal] = useState<number | null>(null)
+  const [allPoints, setAllPoints] = useState(false)
   const [data, setData] = useState<SpaceData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -210,6 +212,9 @@ export default function RecipeSpaceView() {
           if (!ok) return
           setFamilies([...new Set(meta.families.map((f) => f.family))].sort())
           setHasUmap(meta.projection.some((p) => p.method === 'umap'))
+          // counts.projected is count(DISTINCT recipe_id); DuckDB serializes
+          // BIGINTs as strings, hence the Number()
+          setProjectedTotal(Number(meta.counts.projected) || null)
         } else {
           const [corpus, proj] = await Promise.all([loadLocalCorpus(), loadLocalProjection()])
           if (!ok) return
@@ -240,7 +245,7 @@ export default function RecipeSpaceView() {
         // bundled snapshot for this view rather than rendering nothing.
         let apiServed = false
         if (apiLive) {
-          const res = await fetchProjection(method, nearestBlend(blend), 8000, ctrl.signal)
+          const res = await fetchProjection(method, nearestBlend(blend), allPoints ? 60000 : 8000, ctrl.signal)
           if (!ok) return
           if (res.points.length > 0) {
             apiServed = true
@@ -280,7 +285,7 @@ export default function RecipeSpaceView() {
       ok = false
       ctrl.abort()
     }
-  }, [method, blendKey, apiLive])
+  }, [method, blendKey, apiLive, allPoints])
 
   const recipes = data?.recipes ?? []
   const points = data?.points ?? []
@@ -381,8 +386,25 @@ export default function RecipeSpaceView() {
             />
             <span className="val">{blend === 0 ? 'vitals' : blend === 1 ? 'ingredients' : 'balanced'}</span>
           </label>
+          {apiLive && projectedTotal != null && projectedTotal > 8000 && (
+            <label className="ctl">
+              Points
+              <span className="seg">
+                <button className={!allPoints ? 'active' : ''} onClick={() => setAllPoints(false)}>
+                  8k sample
+                </button>
+                <button className={allPoints ? 'active' : ''} onClick={() => setAllPoints(true)}>
+                  All {projectedTotal.toLocaleString()}
+                </button>
+              </span>
+            </label>
+          )}
           <span className="ctl" style={{ color: 'var(--muted)', fontSize: 12 }}>
-            {loading ? 'loading…' : `${recipes.length.toLocaleString()} recipes`}
+            {loading
+              ? 'loading…'
+              : projectedTotal != null && projectedTotal > recipes.length
+                ? `${recipes.length.toLocaleString()} of ${projectedTotal.toLocaleString()} recipes (stable random sample)`
+                : `${recipes.length.toLocaleString()} recipes`}
           </span>
         </div>
         <div className="canvas-wrap">

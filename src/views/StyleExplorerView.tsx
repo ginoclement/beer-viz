@@ -52,6 +52,7 @@ export default function StyleExplorerView() {
   // for recipes already inside the tolerance-widened window (a bounded page);
   // offline we lazy-load the bundled corpus and filter it here.
   const [candidates, setCandidates] = useState<CorpusRecipe[]>([])
+  const [apiTotal, setApiTotal] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [detail, setDetail] = useState<CorpusRecipe | null>(null)
@@ -75,13 +76,15 @@ export default function StyleExplorerView() {
             bounds[`${a.key}Min`] = lo - tol * w
             bounds[`${a.key}Max`] = hi + tol * w
           }
-          const res = await fetchRecipes({ ...bounds, limit: 500 }, ctrl.signal)
+          const res = await fetchRecipes({ ...bounds, sort: 'random', limit: 2000 }, ctrl.signal)
           if (!ok) return
           setCandidates(res.recipes.map(rowToRecipe))
+          setApiTotal(res.total)
         } else {
           const corpus = await loadLocalCorpus()
           if (!ok) return
           setCandidates(corpus.recipes)
+          setApiTotal(null)
         }
       } catch (e) {
         if (ok && (e as { name?: string })?.name !== 'AbortError') setError(String(e))
@@ -223,9 +226,11 @@ export default function StyleExplorerView() {
               ? `Couldn't load recipes`
               : loading
                 ? 'loading…'
-                : `${matches.length} recipe${matches.length === 1 ? '' : 's'} in range${
-                    apiEnabled && !apiLive ? ' · live API unreachable, using bundled snapshot' : ''
-                  }`}
+                : `${matches.length.toLocaleString()} recipe${matches.length === 1 ? '' : 's'} in range${
+                    apiTotal != null && apiTotal > candidates.length
+                      ? ` · random ${candidates.length.toLocaleString()}-recipe sample of ${apiTotal.toLocaleString()} in the window`
+                      : ''
+                  }${apiEnabled && !apiLive ? ' · live API unreachable, using bundled snapshot' : ''}`}
           </span>
         </div>
         <div className="stage">

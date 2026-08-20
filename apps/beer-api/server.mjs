@@ -132,10 +132,13 @@ const routes = (fastify, _opts, done) => {
     }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
-    const sortCols = { abv: 'abv', ibu: 'ibu', srm: 'srm', og: 'og', name: 'name' }
+    // 'random' gives a stable unbiased sample (hash order, like /projection) —
+    // the right default when a view can only show a subset; a real column sort
+    // would silently bias the subset toward one end of that column.
+    const sortCols = { abv: 'abv', ibu: 'ibu', srm: 'srm', og: 'og', name: 'name', random: 'hash(id)' }
     const sortCol = sortCols[q.sort] ?? 'abv'
     const dir = String(q.dir).toLowerCase() === 'asc' ? 'ASC' : 'DESC'
-    const limit = clampInt(q.limit, 100, 500)
+    const limit = clampInt(q.limit, 100, 5000)
     const offset = Math.max(parseInt(q.offset) || 0, 0)
 
     const [{ total }] = await query(`SELECT count(*)::INTEGER AS total FROM recipes ${clause}`, params)

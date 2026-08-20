@@ -136,6 +136,11 @@ export const fetchProjection = (method: string, blend: number, limit = 8000, sig
 export const fetchRecipeDetail = (id: number, signal?: AbortSignal) =>
   getJSON<RecipeDetailResponse>(`/recipe/${id}`, signal)
 
+/** Live ingredient rollups from the API host's data build (same shape as the
+ *  bundled aggregates.json; see lib/ingredients.ts Aggregates). */
+export const fetchAggregates = (signal?: AbortSignal) =>
+  getJSON<Record<string, unknown>>('/aggregates', signal)
+
 // ---------------------------------------------------- API → CorpusRecipe
 
 const styleGuess = (code: string | null, name?: string | null) =>
