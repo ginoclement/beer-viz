@@ -13,6 +13,7 @@ import {
 } from '../lib/api'
 import { loadLocalCorpus, loadLocalProjection, type Coords } from '../lib/localData'
 import { useApiLive } from '../state/useApiLive'
+import SampleSize, { sampleLimit } from '../components/SampleSize'
 import { srmToHex } from '../lib/srm'
 import { GristBar, HopScheduleList } from '../components/IngredientBill'
 import SidePanel from '../components/SidePanel'
@@ -184,7 +185,7 @@ export default function RecipeSpaceView() {
   const [families, setFamilies] = useState<string[]>([])
   const [hasUmap, setHasUmap] = useState(false)
   const [projectedTotal, setProjectedTotal] = useState<number | null>(null)
-  const [allPoints, setAllPoints] = useState(false)
+  const [sample, setSample] = useState(8000)
   const [data, setData] = useState<SpaceData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -245,7 +246,7 @@ export default function RecipeSpaceView() {
         // bundled snapshot for this view rather than rendering nothing.
         let apiServed = false
         if (apiLive) {
-          const res = await fetchProjection(method, nearestBlend(blend), allPoints ? 60000 : 8000, ctrl.signal)
+          const res = await fetchProjection(method, nearestBlend(blend), sampleLimit(sample), ctrl.signal)
           if (!ok) return
           if (res.points.length > 0) {
             apiServed = true
@@ -285,7 +286,7 @@ export default function RecipeSpaceView() {
       ok = false
       ctrl.abort()
     }
-  }, [method, blendKey, apiLive, allPoints])
+  }, [method, blendKey, apiLive, sample])
 
   const recipes = data?.recipes ?? []
   const points = data?.points ?? []
@@ -386,19 +387,7 @@ export default function RecipeSpaceView() {
             />
             <span className="val">{blend === 0 ? 'vitals' : blend === 1 ? 'ingredients' : 'balanced'}</span>
           </label>
-          {apiLive && projectedTotal != null && projectedTotal > 8000 && (
-            <label className="ctl">
-              Points
-              <span className="seg">
-                <button className={!allPoints ? 'active' : ''} onClick={() => setAllPoints(false)}>
-                  8k sample
-                </button>
-                <button className={allPoints ? 'active' : ''} onClick={() => setAllPoints(true)}>
-                  All {projectedTotal.toLocaleString()}
-                </button>
-              </span>
-            </label>
-          )}
+          {apiLive && <SampleSize value={sample} onChange={setSample} total={projectedTotal} />}
           <span className="ctl" style={{ color: 'var(--muted)', fontSize: 12 }}>
             {loading
               ? 'loading…'

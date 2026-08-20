@@ -10,6 +10,7 @@ import {
 import { fetchRecipes, fetchRecipeDetail, rowToRecipe, detailToRecipe } from '../lib/api'
 import { useApiLive } from '../state/useApiLive'
 import { useAggregates } from '../state/useAggregates'
+import SampleSize, { sampleLimit } from '../components/SampleSize'
 import { loadLocalCorpus } from '../lib/localData'
 import { srmToHex } from '../lib/srm'
 import { GristBar, HopScheduleList } from '../components/IngredientBill'
@@ -517,6 +518,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
   // load the bundled corpus and filter it (the leaderboard/grist read rollups).
   const [recipes, setRecipes] = useState<CorpusRecipe[]>([])
   const [scatterTotal, setScatterTotal] = useState<number | null>(null)
+  const [sample, setSample] = useState(2000)
   const [detail, setDetail] = useState<CorpusRecipe | null>(null)
 
   const apiLive = useApiLive()
@@ -528,7 +530,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
       try {
         if (apiLive) {
           const res = await fetchRecipes(
-            { family: family === 'all' ? undefined : family, sort: 'random', limit: 2000 },
+            { family: family === 'all' ? undefined : family, sort: 'random', limit: sampleLimit(sample) },
             ctrl.signal,
           )
           if (ok) {
@@ -550,7 +552,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
       ok = false
       ctrl.abort()
     }
-  }, [family, apiLive])
+  }, [family, apiLive, sample])
 
   // Full detail (grain bill + hops) for the clicked dot.
   useEffect(() => {
@@ -594,6 +596,9 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
               ))}
             </select>
           </label>
+          {page === 'outcome' && apiLive && (
+            <SampleSize value={sample} onChange={setSample} total={scatterTotal} />
+          )}
           <span style={{ color: 'var(--muted)' }}>
             {agg.totalRecipes.toLocaleString()} recipes with full ingredient bills
           </span>

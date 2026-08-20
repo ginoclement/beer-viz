@@ -138,7 +138,7 @@ const routes = (fastify, _opts, done) => {
     const sortCols = { abv: 'abv', ibu: 'ibu', srm: 'srm', og: 'og', name: 'name', random: 'hash(id)' }
     const sortCol = sortCols[q.sort] ?? 'abv'
     const dir = String(q.dir).toLowerCase() === 'asc' ? 'ASC' : 'DESC'
-    const limit = clampInt(q.limit, 100, 5000)
+    const limit = clampInt(q.limit, 100, 60000)
     const offset = Math.max(parseInt(q.offset) || 0, 0)
 
     const [{ total }] = await query(`SELECT count(*)::INTEGER AS total FROM recipes ${clause}`, params)

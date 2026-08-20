@@ -99,11 +99,51 @@ export interface FamilyAgg {
   grist: GristAgg
   outcome: OutcomeAgg
 }
+export type VitalHistKey = 'abv' | 'ibu' | 'srm' | 'og' | 'buGu'
+export interface VitalHistogram {
+  min: number
+  max: number
+  step: number
+  label: string
+  n: number
+  counts: number[]
+  quantiles: { p5: number; p25: number; p50: number; p75: number; p95: number }
+}
+export interface FamilyDeviation {
+  family: string
+  n: number
+  /** mean signed distance from the matched style's midpoint, in half-range
+   *  units (+1 = at the top of the published range) */
+  dev: Record<'abv' | 'ibu' | 'srm' | 'og', number | null>
+}
+export interface HopPair {
+  a: string
+  b: string
+  n: number
+  lift: number
+}
+export interface YeastAgg {
+  name: string
+  n: number
+  share: number
+  medianAttenuation: number | null
+  topFamily: string
+}
+export interface CorpusInsights {
+  histograms: Record<VitalHistKey, VitalHistogram>
+  deviation: FamilyDeviation[]
+  hopPairs: HopPair[]
+  recipesWithHops: number
+  yeasts: YeastAgg[]
+}
+
 export interface Aggregates {
   source: string
   totalRecipes: number
   families: { family: string; n: number }[]
   byFamily: Record<string, FamilyAgg>
+  /** absent from aggregates.json files built before the Insights page existed */
+  insights?: CorpusInsights
 }
 export const AGGREGATES = aggregatesJson as unknown as Aggregates
 

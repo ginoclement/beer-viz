@@ -375,9 +375,150 @@ for (const { family } of families) {
   byFamily[family] = { hops: hopLeaderboard(rs), grist: gristAgg(rs), outcome: outcomeAgg(rs) }
 }
 
+// ------------------------------------------------------------- insights
+// Corpus-wide research rollups for the Recipes → Insights page. Computed
+// exactly over the full corpus here (never sampled in the browser), and
+// served live from the API host's /aggregates once its data is rebuilt.
+
+const quantile = (sorted, q) => {
+  if (!sorted.length) return null
+  const i = (sorted.length - 1) * q
+  const lo = Math.floor(i)
+  return +(sorted[lo] + (sorted[Math.ceil(i)] - sorted[lo]) * (i - lo)).toFixed(4)
+}
+
+const HIST_SPECS = {
+  abv: { min: 0, max: 15, step: 0.25, label: 'ABV %' },
+  ibu: { min: 0, max: 120, step: 5, label: 'IBU' },
+  srm: { min: 0, max: 60, step: 2, label: 'SRM' },
+  og: { min: 1.02, max: 1.13, step: 0.005, label: 'OG' },
+  buGu: { min: 0, max: 1.5, step: 0.05, label: 'BU:GU' },
+}
+
+function buildInsights(rs) {
+  const valueOf = {
+    abv: (r) => r.vitals.abv,
+    ibu: (r) => r.vitals.ibu,
+    srm: (r) => r.vitals.srm,
+    og: (r) => r.vitals.og,
+    buGu: (r) =>
+      r.vitals.ibu != null && r.vitals.og != null && r.vitals.og > 1.001
+        ? r.vitals.ibu / ((r.vitals.og - 1) * 1000)
+        : null,
+  }
+
+  const histograms = {}
+  for (const [key, spec] of Object.entries(HIST_SPECS)) {
+    const vals = rs.map(valueOf[key]).filter((v) => v != null && isFinite(v))
+    vals.sort((a, b) => a - b)
+    const nBins = Math.round((spec.max - spec.min) / spec.step)
+    const counts = new Array(nBins).fill(0)
+    for (const v of vals) {
+      const b = Math.min(Math.max(Math.floor((v - spec.min) / spec.step), 0), nBins - 1)
+      counts[b]++
+    }
+    histograms[key] = {
+      ...spec,
+      n: vals.length,
+      counts,
+      quantiles: { p5: quantile(vals, 0.05), p25: quantile(vals, 0.25), p50: quantile(vals, 0.5), p75: quantile(vals, 0.75), p95: quantile(vals, 0.95) },
+    }
+  }
+
+  // Brewed vs. book: how far real recipes sit from their matched style's
+  // published midpoint, in half-range units (+1 = at the top of the range).
+  const styleById = new Map(refStyles.map((s) => [s.id, s]))
+  const devByFamily = new Map()
+  for (const r of rs) {
+    const s = r.styleGuess && styleById.get(r.styleGuess.code)
+    if (!s) continue
+    let acc = devByFamily.get(r.family)
+    if (!acc) devByFamily.set(r.family, (acc = { n: 0, sums: { abv: 0, ibu: 0, srm: 0, og: 0 }, ns: { abv: 0, ibu: 0, srm: 0, og: 0 } }))
+    acc.n++
+    for (const k of ['abv', 'ibu', 'srm', 'og']) {
+      const range = s.stats[k]
+      const v = r.vitals[k]
+      if (!range || v == null) continue
+      const half = Math.max((range[1] - range[0]) / 2, 1e-9)
+      acc.sums[k] += (v - (range[0] + range[1]) / 2) / half
+      acc.ns[k]++
+    }
+  }
+  const deviation = [...devByFamily.entries()]
+    .filter(([, a]) => a.n >= 30)
+    .map(([family, a]) => ({
+      family,
+      n: a.n,
+      dev: Object.fromEntries(
+        ['abv', 'ibu', 'srm', 'og'].map((k) => [k, a.ns[k] ? +(a.sums[k] / a.ns[k]).toFixed(3) : null]),
+      ),
+    }))
+    .sort((a, b) => b.n - a.n)
+
+  // Hop pairings: which matched varieties appear in the same recipe, with
+  // lift vs. independent use (>1 = chosen together more than chance).
+  const hopCounts = new Map()
+  const pairCounts = new Map()
+  let recipesWithHops = 0
+  for (const r of rs) {
+    const keys = [...new Set(r.hops.map((h) => h.key).filter(Boolean))].sort()
+    if (!keys.length) continue
+    recipesWithHops++
+    for (const k of keys) hopCounts.set(k, (hopCounts.get(k) ?? 0) + 1)
+    for (let i = 0; i < keys.length; i++)
+      for (let j = i + 1; j < keys.length; j++) {
+        const id = `${keys[i]}|${keys[j]}`
+        pairCounts.set(id, (pairCounts.get(id) ?? 0) + 1)
+      }
+  }
+  const hopPairs = [...pairCounts.entries()]
+    .filter(([, n]) => n >= 20)
+    .map(([id, n]) => {
+      const [a, b] = id.split('|')
+      const lift = n * recipesWithHops / ((hopCounts.get(a) ?? 1) * (hopCounts.get(b) ?? 1))
+      return { a, b, n, lift: +lift.toFixed(2) }
+    })
+    .sort((x, y) => y.n - x.n)
+    .slice(0, 30)
+
+  // Yeast leaderboard: group by product code when one is present, else by
+  // the cleaned name; report the most common raw spelling per group.
+  const yeastGroups = new Map()
+  for (const r of rs) {
+    if (!r.yeast) continue
+    const raw = String(r.yeast).trim()
+    if (!raw) continue
+    const cleaned = raw.toLowerCase().replace(/[^a-z0-9\/ -]+/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!/[a-z0-9]/.test(cleaned)) continue // placeholder entries like "- -"
+    const code = cleaned.match(/\b(?:wlp ?\d{3,4}|wy ?\d{4}|[a-z]{1,2}-\d{2,3}|34\/70|\d{4})\b/)?.[0]?.replace(/\s+/g, '')
+    const key = code ?? cleaned
+    let g = yeastGroups.get(key)
+    if (!g) yeastGroups.set(key, (g = { n: 0, raws: new Map(), attens: [], families: new Map() }))
+    g.n++
+    g.raws.set(raw, (g.raws.get(raw) ?? 0) + 1)
+    if (r.attenuation != null && r.attenuation > 40 && r.attenuation < 100) g.attens.push(r.attenuation)
+    g.families.set(r.family, (g.families.get(r.family) ?? 0) + 1)
+  }
+  const topOf = (m) => [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? ''
+  const yeasts = [...yeastGroups.values()]
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 15)
+    .map((g) => ({
+      name: topOf(g.raws),
+      n: g.n,
+      share: +(g.n / rs.length).toFixed(4),
+      medianAttenuation: quantile(g.attens.sort((a, b) => a - b), 0.5),
+      topFamily: topOf(g.families),
+    }))
+
+  return { histograms, deviation, hopPairs, recipesWithHops, yeasts }
+}
+
+const insights = buildInsights(recipes)
+
 writeFileSync(
   join(root, 'src/generated/aggregates.json'),
-  JSON.stringify({ source: out.source, totalRecipes: recipes.length, families, byFamily }),
+  JSON.stringify({ source: out.source, totalRecipes: recipes.length, families, byFamily, insights }),
 )
 
 // Slim per-recipe rows: drop the prose description and per-malt weight; add

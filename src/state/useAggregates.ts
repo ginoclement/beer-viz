@@ -22,8 +22,10 @@ export function useAggregates(): Aggregates {
       .then((a) => {
         const cand = a as unknown as Aggregates
         if (ok && cand && typeof cand.totalRecipes === 'number' && cand.byFamily) {
-          live = cand
-          setAgg(cand)
+          // an API host built before newer rollups existed may lack fields
+          // (e.g. insights) — keep the bundled values for whatever's missing
+          live = { ...AGGREGATES, ...cand }
+          setAgg(live)
         }
       })
       .catch(() => {})

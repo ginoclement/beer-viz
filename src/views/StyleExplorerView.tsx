@@ -11,6 +11,7 @@ import {
 } from '../lib/api'
 import { loadLocalCorpus } from '../lib/localData'
 import { useApiLive } from '../state/useApiLive'
+import SampleSize, { sampleLimit } from '../components/SampleSize'
 import { srmToHex } from '../lib/srm'
 import { GristBar, HopScheduleList } from '../components/IngredientBill'
 import SidePanel from '../components/SidePanel'
@@ -53,6 +54,7 @@ export default function StyleExplorerView() {
   // offline we lazy-load the bundled corpus and filter it here.
   const [candidates, setCandidates] = useState<CorpusRecipe[]>([])
   const [apiTotal, setApiTotal] = useState<number | null>(null)
+  const [sample, setSample] = useState(2000)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [detail, setDetail] = useState<CorpusRecipe | null>(null)
@@ -76,7 +78,7 @@ export default function StyleExplorerView() {
             bounds[`${a.key}Min`] = lo - tol * w
             bounds[`${a.key}Max`] = hi + tol * w
           }
-          const res = await fetchRecipes({ ...bounds, sort: 'random', limit: 2000 }, ctrl.signal)
+          const res = await fetchRecipes({ ...bounds, sort: 'random', limit: sampleLimit(sample) }, ctrl.signal)
           if (!ok) return
           setCandidates(res.recipes.map(rowToRecipe))
           setApiTotal(res.total)
@@ -96,7 +98,7 @@ export default function StyleExplorerView() {
       ok = false
       ctrl.abort()
     }
-  }, [style, tol, apiLive])
+  }, [style, tol, apiLive, sample])
 
   // Membership: a recipe is "in range" when every vital sits inside the
   // style's published range widened by the tolerance fraction of the range.
@@ -221,6 +223,7 @@ export default function StyleExplorerView() {
             <input type="range" min={0} max={0.5} step={0.05} value={tol} onChange={(e) => setTol(Number(e.target.value))} />
             <span className="val">±{Math.round(tol * 100)}%</span>
           </label>
+          {apiLive && <SampleSize value={sample} onChange={setSample} total={apiTotal} />}
           <span className="ctl" style={{ color: error ? '#ff9b9b' : 'var(--muted)', fontSize: 12 }}>
             {error
               ? `Couldn't load recipes`

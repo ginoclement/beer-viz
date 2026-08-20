@@ -8,6 +8,7 @@ import MatrixView from './views/MatrixView'
 import CompareView from './views/CompareView'
 import RecipeView from './views/RecipeView'
 import StyleExplorerView from './views/StyleExplorerView'
+import InsightsView from './views/InsightsView'
 import RecipeSpaceView from './views/RecipeSpaceView'
 import BrowseView from './views/BrowseView'
 import HopsView from './views/HopsView'
@@ -58,6 +59,7 @@ const NAV = [
   {
     group: 'Recipes',
     pages: [
+      { id: 'recipes-insights', label: 'Insights' },
       { id: 'recipes-explore', label: 'Style Explorer' },
       { id: 'recipes-space', label: '3D Recipe Space' },
     ],
@@ -234,6 +236,7 @@ function Shell() {
       {page === 'compare-map' && <CompareView page="map" />}
       {page === 'compare-drift' && <CompareView page="drift" />}
 
+      {page === 'recipes-insights' && <InsightsView goToHops={() => goToPage('hops-pairing')} />}
       {page === 'recipes-explore' && <StyleExplorerView />}
       {page === 'recipes-space' && <RecipeSpaceView />}
       {page === 'browse' && <BrowseView goToSpace={() => goToPage('space')} />}
