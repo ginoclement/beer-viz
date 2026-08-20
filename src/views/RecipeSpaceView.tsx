@@ -12,6 +12,7 @@ import {
   detailToRecipe,
 } from '../lib/api'
 import { loadLocalCorpus, loadLocalProjection, type Coords } from '../lib/localData'
+import { useApiLive } from '../state/useApiLive'
 import { srmToHex } from '../lib/srm'
 import { GristBar, HopScheduleList } from '../components/IngredientBill'
 import SidePanel from '../components/SidePanel'
@@ -196,12 +197,15 @@ export default function RecipeSpaceView() {
     }
   }, [families])
 
-  // Discover availability once: families (stable colors) and UMAP presence.
+  const apiLive = useApiLive()
+
+  // Discover availability: families (stable colors) and UMAP presence.
+  // Re-runs if the API drops mid-session so the local fallback fills in.
   useEffect(() => {
     let ok = true
     ;(async () => {
       try {
-        if (apiEnabled) {
+        if (apiLive) {
           const meta = await fetchMeta()
           if (!ok) return
           setFamilies([...new Set(meta.families.map((f) => f.family))].sort())
@@ -219,7 +223,7 @@ export default function RecipeSpaceView() {
     return () => {
       ok = false
     }
-  }, [])
+  }, [apiLive])
 
   const blendKey = String(nearestBlend(blend))
 
@@ -231,7 +235,7 @@ export default function RecipeSpaceView() {
     setError(null)
     ;(async () => {
       try {
-        if (apiEnabled) {
+        if (apiLive) {
           const res = await fetchProjection(method, nearestBlend(blend), 8000, ctrl.signal)
           if (!ok) return
           setData({
@@ -266,7 +270,7 @@ export default function RecipeSpaceView() {
       ok = false
       ctrl.abort()
     }
-  }, [method, blendKey])
+  }, [method, blendKey, apiLive])
 
   const recipes = data?.recipes ?? []
   const points = data?.points ?? []
@@ -280,7 +284,7 @@ export default function RecipeSpaceView() {
     }
     const light = recipes[selected]
     setDetail(light)
-    if (!apiEnabled) return
+    if (!apiLive) return
     let ok = true
     fetchRecipeDetail(light.id)
       .then((d) => {
@@ -290,7 +294,7 @@ export default function RecipeSpaceView() {
     return () => {
       ok = false
     }
-  }, [selected, recipes])
+  }, [selected, recipes, apiLive])
 
   const abvRange = useMemo(() => {
     if (!recipes.length) return [0, 12] as [number, number]
@@ -411,9 +415,13 @@ export default function RecipeSpaceView() {
             />
             <OrbitControls enableDamping dampingFactor={0.12} makeDefault />
           </Canvas>
-          {(loading || error) && (
+          {(loading || error || (apiEnabled && !apiLive)) && (
             <div className="overlay-note" style={{ position: 'absolute', top: 16, left: 16, background: 'rgba(0,0,0,0.6)', padding: '6px 10px', borderRadius: 6, fontSize: 13, color: error ? '#ff9b9b' : 'var(--muted)' }}>
-              {error ? `Couldn't load recipes: ${error}` : 'Loading recipe space…'}
+              {error
+                ? `Couldn't load recipes: ${error}`
+                : loading
+                  ? 'Loading recipe space…'
+                  : 'Live recipe API unreachable — showing the bundled snapshot'}
             </div>
           )}
           {hover && hovered && (

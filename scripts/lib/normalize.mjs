@@ -67,10 +67,25 @@ const HOP_ALIASES = {
   tettnang: 'tettnanger',
   'h mittelfruh': 'hallertauer mittelfruh',
   'hallertau mittelfruh': 'hallertauer mittelfruh',
+  'hallertau tradition': 'hallertauer tradition',
   'german cascade': 'cascade',
   saphire: 'saphir',
   tomahawk: 'ctz',
   dana: 'extra styrian dana',
+  'hallertau hersbrucker': 'hersbrucker',
+  'hersbrucker hallertau': 'hersbrucker',
+  hallertau: 'hallertauer mittelfruh',
+  hallertauer: 'hallertauer mittelfruh',
+  'kent goldings': 'east kent golding',
+  'kent golding': 'east kent golding',
+  goldings: 'goldings',
+  spalt: 'spalter',
+  'spalt select': 'spalter select',
+  'brewer s gold': 'brewers gold',
+  millenium: 'millennium',
+  williamette: 'willamette',
+  'lemon drop': 'lemondrop',
+  'styrian goldings celeia': 'celeia',
 }
 
 export const normHopName = (name) => {
@@ -80,15 +95,23 @@ export const normHopName = (name) => {
     .replace(/[äà]/g, 'a')
     .replace(/[üù]/g, 'u')
     .replace(/[öò]/g, 'o')
+    // vendor packaging qualifiers: "(11 AA)", "(Cryo)", "(U.S.)", "(Germany)"…
+    .replace(/\([^)]*\)/g, ' ')
     .replace(/\b(co2|c02)\b/g, '')
     .replace(/\bextract\b/g, '')
     .replace(/\bpellets?\b/g, '')
-    .replace(/\bleaf\b|\bwhole\b|\bcryo\b|\blupomax\b/g, '')
+    .replace(/\bleaf\b|\bwhole\b|\bcryo\b|\blupomax\b|\blupuln2\b/g, '')
+    // alpha-acid annotations outside parens: "Citra 11 AA", "12.5% AA"
+    .replace(/\b\d+(\.\d+)?\s*%?\s*aa\b/g, ' ')
     .replace(/[^a-z0-9. ]+/g, ' ')
     .replace(/\./g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  return HOP_ALIASES[n] ?? n
+  const aliased = HOP_ALIASES[n] ?? n
+  if (aliased !== n) return aliased
+  // origin qualifiers: "Czech Saaz", "Domestic Hallertau", "AU Galaxy"
+  const stripped = n.replace(/^(domestic|german|czech|french|us|u s|uk|au|nz|american|slovenian)\s+/, '')
+  return stripped !== n ? (HOP_ALIASES[stripped] ?? stripped) : n
 }
 
 /** Build a name->key matcher over the generated hop-chemistry dataset. */

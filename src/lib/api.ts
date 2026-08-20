@@ -9,10 +9,38 @@ import type { CorpusRecipe, HopStage } from './ingredients'
 export const API_BASE = (import.meta.env.VITE_BEER_API_BASE ?? '').replace(/\/$/, '')
 export const apiEnabled = API_BASE !== ''
 
+// ---------------------------------------------------------- availability
+// The API lives on self-hosted infra behind a tunnel, so it can be down or
+// CORS-blocked while the static site is fine. The first failed request marks
+// it unavailable for the rest of the session; views that read useApiLive()
+// (state/useApiLive.ts) re-run their loaders and fall back to the bundled
+// data chunks, which exist in every build.
+let apiDown = false
+const apiListeners = new Set<() => void>()
+
+export function markApiDown(reason: unknown): void {
+  if (apiDown) return
+  apiDown = true
+  console.warn('beer-api unreachable — falling back to bundled snapshot:', reason)
+  for (const l of apiListeners) l()
+}
+
+export const isApiLive = () => apiEnabled && !apiDown
+
+export function subscribeApiLive(listener: () => void): () => void {
+  apiListeners.add(listener)
+  return () => apiListeners.delete(listener)
+}
+
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(API_BASE + path, { signal })
-  if (!res.ok) throw new Error(`beer-api ${path} → ${res.status} ${res.statusText}`)
-  return res.json() as Promise<T>
+  try {
+    const res = await fetch(API_BASE + path, { signal })
+    if (!res.ok) throw new Error(`beer-api ${path} → ${res.status} ${res.statusText}`)
+    return (await res.json()) as T
+  } catch (e) {
+    if ((e as { name?: string })?.name !== 'AbortError') markApiDown(e)
+    throw e
+  }
 }
 
 // ------------------------------------------------------------------ shapes

@@ -10,6 +10,7 @@ import {
   type VitalBounds,
 } from '../lib/api'
 import { loadLocalCorpus } from '../lib/localData'
+import { useApiLive } from '../state/useApiLive'
 import { srmToHex } from '../lib/srm'
 import { GristBar, HopScheduleList } from '../components/IngredientBill'
 import SidePanel from '../components/SidePanel'
@@ -56,6 +57,7 @@ export default function StyleExplorerView() {
   const [detail, setDetail] = useState<CorpusRecipe | null>(null)
 
   const style = eligibleStyles.find((s) => s.id === styleId) ?? eligibleStyles[0]
+  const apiLive = useApiLive()
 
   useEffect(() => {
     let ok = true
@@ -64,7 +66,7 @@ export default function StyleExplorerView() {
     setError(null)
     ;(async () => {
       try {
-        if (apiEnabled) {
+        if (apiLive) {
           if (!style) return
           const bounds: VitalBounds = {}
           for (const a of AXES) {
@@ -91,7 +93,7 @@ export default function StyleExplorerView() {
       ok = false
       ctrl.abort()
     }
-  }, [style, tol])
+  }, [style, tol, apiLive])
 
   // Membership: a recipe is "in range" when every vital sits inside the
   // style's published range widened by the tolerance fraction of the range.
@@ -149,7 +151,7 @@ export default function StyleExplorerView() {
     }
     const cand = candidates.find((r) => r.id === selectedId) ?? null
     setDetail(cand)
-    if (!apiEnabled || !cand) return
+    if (!apiLive || !cand) return
     let ok = true
     fetchRecipeDetail(selectedId)
       .then((d) => {
@@ -159,7 +161,7 @@ export default function StyleExplorerView() {
     return () => {
       ok = false
     }
-  }, [selectedId, candidates])
+  }, [selectedId, candidates, apiLive])
 
   if (!style) return null
 
@@ -221,7 +223,9 @@ export default function StyleExplorerView() {
               ? `Couldn't load recipes`
               : loading
                 ? 'loading…'
-                : `${matches.length} recipe${matches.length === 1 ? '' : 's'} in range`}
+                : `${matches.length} recipe${matches.length === 1 ? '' : 's'} in range${
+                    apiEnabled && !apiLive ? ' · live API unreachable, using bundled snapshot' : ''
+                  }`}
           </span>
         </div>
         <div className="stage">

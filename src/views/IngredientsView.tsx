@@ -8,7 +8,8 @@ import {
   type CorpusRecipe,
   type HopAgg,
 } from '../lib/ingredients'
-import { apiEnabled, fetchRecipes, fetchRecipeDetail, rowToRecipe, detailToRecipe } from '../lib/api'
+import { fetchRecipes, fetchRecipeDetail, rowToRecipe, detailToRecipe } from '../lib/api'
+import { useApiLive } from '../state/useApiLive'
 import { loadLocalCorpus } from '../lib/localData'
 import { srmToHex } from '../lib/srm'
 import { GristBar, HopScheduleList } from '../components/IngredientBill'
@@ -509,12 +510,14 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
   const [recipes, setRecipes] = useState<CorpusRecipe[]>([])
   const [detail, setDetail] = useState<CorpusRecipe | null>(null)
 
+  const apiLive = useApiLive()
+
   useEffect(() => {
     let ok = true
     const ctrl = new AbortController()
     ;(async () => {
       try {
-        if (apiEnabled) {
+        if (apiLive) {
           const res = await fetchRecipes(
             { family: family === 'all' ? undefined : family, limit: 500 },
             ctrl.signal,
@@ -525,14 +528,14 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
           if (ok) setRecipes(family === 'all' ? corpus.recipes : corpus.recipes.filter((r) => r.family === family))
         }
       } catch {
-        /* the scatter simply shows fewer points */
+        /* a failed API call flips apiLive and this effect re-runs offline */
       }
     })()
     return () => {
       ok = false
       ctrl.abort()
     }
-  }, [family])
+  }, [family, apiLive])
 
   // Full detail (grain bill + hops) for the clicked dot.
   useEffect(() => {
@@ -542,7 +545,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
     }
     const cand = recipes.find((r) => r.id === selectedRecipe) ?? null
     setDetail(cand)
-    if (!apiEnabled || !cand) return
+    if (!apiLive || !cand) return
     let ok = true
     fetchRecipeDetail(selectedRecipe)
       .then((d) => {
@@ -552,7 +555,7 @@ export default function IngredientsView({ page = 'usage', goToHops }: { page?: I
     return () => {
       ok = false
     }
-  }, [selectedRecipe, recipes])
+  }, [selectedRecipe, recipes, apiLive])
 
   const pickHop = (key: string) => {
     setHopKey(key)
